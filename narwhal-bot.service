@@ -1,0 +1,21 @@
+[Unit]
+Description=Narwhal Cloud Telegram Monitor Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/narwhal-bot
+# 支持直接读取 .env 环境变量文件
+EnvironmentFile=-/opt/narwhal-bot/.env
+ExecStart=/opt/narwhal-bot/narwhal-bot
+Restart=always
+RestartSec=5
+
+# 资源保护与安全配置
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

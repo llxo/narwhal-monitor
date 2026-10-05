@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - name: Build and Package Binaries
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          platforms=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+          )
+
+          for platform in "${platforms[@]}"; do
+            os=$(echo $platform | cut -d'/' -f1)
+            arch=$(echo $platform | cut -d'/' -f2)
+            archive_name="narwhal-bot_${TAG_NAME}_${os}_${arch}"
+            bin_name="narwhal-bot"
+            if [ "$os" = "windows" ]; then
+              bin_name="narwhal-bot.exe"
+            fi
+
+            staging_dir="dist/${archive_name}"
+            mkdir -p "$staging_dir"
+
+            echo "Compiling for $os/$arch..."
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -ldflags="-s -w" -o "$staging_dir/$bin_name" ./cmd/bot
+            cp .env.example "$staging_dir/"
+            cp narwhal-bot.service "$staging_dir/"
+            cp README.md "$staging_dir/"
+
+            cd dist
+            if [ "$os" = "windows" ]; then
+              zip -r "${archive_name}.zip" "${archive_name}"
+            else
+              tar -czf "${archive_name}.tar.gz" "${archive_name}"
+            fi
+            rm -rf "${archive_name}"
+            cd ..
+          done
+
+          cd dist
+          sha256sum * > checksums.txt
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+          generate_release_notes: true
