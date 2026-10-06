@@ -118,16 +118,16 @@ func formatTraffic(gb int) string {
 
 func formatPrice(price float64) string {
 	s := strconv.FormatFloat(price, 'f', -1, 64)
-	return "$" + s + "/月"
+	return s + "$/月"
 }
 
 // RenderSettingsText 渲染内联菜单控制面板的文本摘要
 func RenderSettingsText(cfg filter.ChatConfig) string {
-	status := "🟢 正在接收通知"
+	status := "🟢 监控推送中"
 	if !cfg.Subscribed {
-		status = "🔴 已全局暂停通知 (/sub on 开启)"
+		status = "🔴 监控已暂停 (/sub on 开启)"
 	} else if !cfg.MutedUntil.IsZero() && time.Now().Before(cfg.MutedUntil) {
-		status = fmt.Sprintf("🟡 静音中 (至 %s 结束)", cfg.MutedUntil.Format("15:04:05"))
+		status = fmt.Sprintf("🟡 免打扰中 (至 %s 结束)", cfg.MutedUntil.Format("15:04:05"))
 	}
 
 	regDesc := "全部地区 (未限制)"
@@ -147,7 +147,8 @@ func RenderSettingsText(cfg filter.ChatConfig) string {
 
 	priceDesc := "不限价格"
 	if cfg.QuickMaxPrice > 0 {
-		priceDesc = fmt.Sprintf("≤ $%.2f/月", cfg.QuickMaxPrice)
+		s := strconv.FormatFloat(cfg.QuickMaxPrice, 'f', -1, 64)
+		priceDesc = fmt.Sprintf("≤ %s$/月", s)
 	}
 
 	var sb strings.Builder
@@ -156,7 +157,7 @@ func RenderSettingsText(cfg filter.ChatConfig) string {
 	sb.WriteString(fmt.Sprintf("• <b>地区白名单:</b> <code>%s</code>\n", regDesc))
 	sb.WriteString(fmt.Sprintf("• <b>价格上限:</b> <code>%s</code>\n", priceDesc))
 	sb.WriteString(fmt.Sprintf("• <b>高级自定义规则:</b> %d 条生效中 (/filter list 查看)\n\n", len(cfg.Rules)))
-	sb.WriteString("<i>💡 提示: 下方按钮即点即生效；或直接输入 /filter add 添加高级正则过滤</i>")
+	sb.WriteString("<i>💡 提示: 按钮即点即生效；点击“🌍 更多冷门地区”可展开全球 30+ 节点定制</i>")
 
 	return sb.String()
 }
@@ -235,7 +236,7 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 
 		sb.WriteString(fmt.Sprintf("🔥 <b>%s</b>  [%s] [%s]\n", html.EscapeString(tp.Name), stockStr, triggerTag))
 		sb.WriteString(fmt.Sprintf(" ├ 配置：%d核/%s/%dG/%dMbps\n", tp.CPU, formatRAM(tp.RamMB), tp.DiskGB, tp.BandwidthMbps))
-		sb.WriteString(fmt.Sprintf(" ├ 流量：%s |  %s\n", formatTraffic(tp.MonthlyTrafficGB), formatPrice(tp.PriceMonthly)))
+		sb.WriteString(fmt.Sprintf(" ├ 流量：%s | %s\n", formatTraffic(tp.MonthlyTrafficGB), formatPrice(tp.PriceMonthly)))
 		sb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>\n", html.EscapeString(deployURL)))
 		if i < len(trigPlans)-1 {
 			sb.WriteString("\n")
@@ -275,7 +276,7 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 
 			otherSb.WriteString(fmt.Sprintf("%s <b>%s</b>  [%s]\n", icon, html.EscapeString(other.Name), otherStock))
 			otherSb.WriteString(fmt.Sprintf(" ├ 配置：%d核/%s/%dG/%dMbps\n", other.CPU, formatRAM(other.RamMB), other.DiskGB, other.BandwidthMbps))
-			otherSb.WriteString(fmt.Sprintf(" ├ 流量：%s |  %s\n", formatTraffic(other.MonthlyTrafficGB), formatPrice(other.PriceMonthly)))
+			otherSb.WriteString(fmt.Sprintf(" ├ 流量：%s | %s\n", formatTraffic(other.MonthlyTrafficGB), formatPrice(other.PriceMonthly)))
 			otherSb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>", html.EscapeString(otherURL)))
 			if i < len(evt.OtherPlans)-1 && i < maxOther-1 {
 				otherSb.WriteString("\n")

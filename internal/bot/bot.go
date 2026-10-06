@@ -3,6 +3,9 @@ package bot
 import (
 	"fmt"
 	"log"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,15 +61,16 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 	handler := NewHandler(engine, apiClient, cfg.AdminID)
 	handler.RegisterRoutes(b)
 
-	// 1. 注册全员默认命令菜单 (普通白名单用户)
+	// 1. 注册全员默认命令菜单 (普通白名单用户与游客)
 	userCommands := []tele.Command{
-		{Text: "check", Description: "立即查询当前在售库存与命中情况"},
-		{Text: "menu", Description: "打开内联交互式过滤菜单面板"},
+		{Text: "start", Description: "开启监控向导与欢迎信息"},
+		{Text: "register", Description: "登记为游客"},
+		{Text: "guest", Description: "游客模式管理"},
+		{Text: "menu", Description: "打开交互式过滤菜单面板"},
 		{Text: "filter", Description: "查看或配置高级正则过滤规则"},
-		{Text: "sub", Description: "开关通知推送 (/sub on|off)"},
+		{Text: "sub", Description: "切换推送通知 (开启/暂停)"},
 		{Text: "mute", Description: "开启临时免打扰 (/mute 1h)"},
 		{Text: "id", Description: "查看当前会话的 Chat ID"},
-		{Text: "status", Description: "查看监控服务运行状态"},
 		{Text: "help", Description: "查看命令语法与使用教程"},
 	}
 
@@ -76,15 +80,23 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 		log.Println("[Bot] 官方全员默认命令菜单已成功向 Telegram 注册！")
 	}
 
-	// 2. 为单一超级管理员注册专属特权菜单 (包含 /admin, /user, /stats, /broadcast)
+	// 2. 为单一超级管理员注册专属特权菜单 (包含 /admin, /user, /guest, /check, /status, /stats, /broadcast)
 	if cfg.AdminID != 0 {
-		adminCommands := append([]tele.Command(nil), userCommands...)
-		adminCommands = append(adminCommands,
-			tele.Command{Text: "admin", Description: "👑 [管理] 打开管理员控制面板"},
-			tele.Command{Text: "user", Description: "👑 [管理] 白名单授权管理 (/user add|del|list)"},
-			tele.Command{Text: "stats", Description: "👑 [管理] 查看系统监控大盘统计"},
-			tele.Command{Text: "broadcast", Description: "👑 [管理] 向全员群发系统维护广播"},
-		)
+		adminCommands := []tele.Command{
+			{Text: "start", Description: "开启监控向导与欢迎信息"},
+			{Text: "menu", Description: "打开交互式过滤菜单面板"},
+			{Text: "filter", Description: "查看或配置高级正则过滤规则"},
+			{Text: "sub", Description: "切换推送通知 (开启/暂停)"},
+			{Text: "mute", Description: "开启临时免打扰 (/mute 1h)"},
+			{Text: "id", Description: "查看当前会话的 Chat ID"},
+			{Text: "help", Description: "查看命令语法与使用教程"},
+			{Text: "admin", Description: "👑 [管理] 打开管理员控制面板"},
+			{Text: "check", Description: "👑 [管理] 立即查询当前在售库存与命中"},
+			{Text: "status", Description: "👑 [管理] 查看系统运行状态"},
+			{Text: "user", Description: "👑 [管理] 白名单授权管理"},
+			{Text: "guest", Description: "👑 [管理] 游客模式设置"},
+			{Text: "broadcast", Description: "👑 [管理] 向全员群发系统维护广播"},
+		}
 		scope := tele.CommandScope{Type: tele.CommandScopeChat, ChatID: cfg.AdminID}
 		if err := b.SetCommands(adminCommands, scope); err != nil {
 			log.Printf("[Bot提示] 管理员 %d 专属特权菜单初始化登记: %v", cfg.AdminID, err)
@@ -121,10 +133,32 @@ func (b *Bot) Stop() {
 	b.teleBot.Stop()
 }
 
+// parseFloodWait 解析 Telegram 返回的 429 Flood Wait 冷却秒数
+func parseFloodWait(err error) time.Duration {
+	if err == nil {
+		return 0
+	}
+	errStr := strings.ToLower(err.Error())
+	if strings.Contains(errStr, "too many requests") || strings.Contains(errStr, "flood") {
+		re := regexp.MustCompile(`(?:retry after|flood wait of) (\d+)`)
+		matches := re.FindStringSubmatch(errStr)
+		if len(matches) > 1 {
+			if secs, err := strconv.Atoi(matches[1]); err == nil && secs > 0 {
+				return time.Duration(secs) * time.Second
+			}
+		}
+		// 默认兜底冷却 5 秒
+		return 5 * time.Second
+	}
+	return 0
+}
+
 func (b *Bot) runPushWorker() {
 	// 全局发信控制：每 40ms 最多发出一条消息 (全局上限 25 msg/s，符合 Telegram 30 msg/s 规范)
 	ticker := time.NewTicker(40 * time.Millisecond)
 	defer ticker.Stop()
+
+	var floodUntil time.Time
 
 	for {
 		select {
@@ -134,6 +168,18 @@ func (b *Bot) runPushWorker() {
 			if !ok {
 				return
 			}
+
+			// 检查是否处于 Telegram 429 Flood Wait 熔断冷却期
+			if time.Now().Before(floodUntil) {
+				waitDur := time.Until(floodUntil)
+				log.Printf("[推送退避] 处于 Telegram 429 熔断冷却中，等待 %v...", waitDur)
+				select {
+				case <-time.After(waitDur):
+				case <-b.stopChan:
+					return
+				}
+			}
+
 			<-ticker.C
 
 			// 单 Chat 限速保护：对同一 Chat ID 两次推送至少间隔 1000ms，严格遵守 Telegram 1 msg/s 规范
@@ -142,12 +188,18 @@ func (b *Bot) runPushWorker() {
 			waitDur := time.Second - time.Since(lastTime)
 			if waitDur > 0 {
 				b.lastSendMu.Unlock()
-				select {
-				case <-time.After(waitDur):
-				case <-b.stopChan:
-					return
-				}
-				b.lastSendMu.Lock()
+				// 非阻塞延后重入队：该 Chat 处于 1s 冷却期，延后重新入队，先放行队列中其他 Chat
+				go func(t pushTask, delay time.Duration) {
+					select {
+					case <-time.After(delay):
+						select {
+						case b.pushQueue <- t:
+						default:
+						}
+					case <-b.stopChan:
+					}
+				}(task, waitDur)
+				continue
 			}
 			b.lastSend[task.chatID] = time.Now()
 			b.lastSendMu.Unlock()
@@ -162,6 +214,36 @@ func (b *Bot) runPushWorker() {
 			}
 			if err != nil {
 				log.Printf("[推送错误] 向 Chat %d 推送消息失败: %v", task.chatID, err)
+
+				// 检查 429 Flood Wait 错误并进入退避
+				if floodWait := parseFloodWait(err); floodWait > 0 {
+					floodUntil = time.Now().Add(floodWait)
+					log.Printf("[推送熔断] 触发 Telegram 429 Flood Wait，自动全局暂停推送 %v (至 %s)", floodWait, floodUntil.Format("15:04:05"))
+					// 将本条失败的任务重新塞回队列头部稍后重试
+					go func(t pushTask, delay time.Duration) {
+						select {
+						case <-time.After(delay):
+							select {
+							case b.pushQueue <- t:
+							default:
+							}
+						case <-b.stopChan:
+						}
+					}(task, floodWait)
+					continue
+				}
+
+				// 死信自愈处理
+				errStr := strings.ToLower(err.Error())
+				if strings.Contains(errStr, "blocked") || strings.Contains(errStr, "deactivated") || strings.Contains(errStr, "chat not found") {
+					if b.engine.IsGuest(task.chatID) {
+						b.engine.UnregisterGuest(task.chatID)
+						log.Printf("[推送自愈] 检测到游客 Chat %d 已拉黑或注销，已自动注销并释放名额", task.chatID)
+					} else {
+						b.engine.SetSubscribed(task.chatID, false)
+						log.Printf("[推送自愈] 检测到白名单 Chat %d 已拉黑或注销，已自动暂停其推送订阅", task.chatID)
+					}
+				}
 			}
 		}
 	}
@@ -209,12 +291,26 @@ func (b *Bot) DispatchEvent(evt monitor.Event) {
 		return
 	}
 
+	// 区分优先级分流：超级管理员与正式白名单享有最高抢占优先级，游客排在其后
+	var vipChats []int64
+	var guestChats []int64
+	adminID := b.engine.GetAdminID()
+
 	for _, chatID := range subscribers {
-		// 实时通过过滤引擎判定当前 Chat 是否命中规则
 		if !b.engine.Evaluate(chatID, &evt.Payload) {
 			continue
 		}
+		if (adminID != 0 && chatID == adminID) || b.engine.IsAuthorized(chatID) {
+			vipChats = append(vipChats, chatID)
+		} else {
+			guestChats = append(guestChats, chatID)
+		}
+	}
 
+	// 优先调度 VIP 用户与管理员，再调度游客
+	dispatchList := append(vipChats, guestChats...)
+
+	for _, chatID := range dispatchList {
 		select {
 		case b.pushQueue <- pushTask{chatID: chatID, text: cardText, markup: markup}:
 		default:

@@ -32,6 +32,14 @@ var RareRegions = []string{
 	"ES", "NO", "CL",
 }
 
+// AllSupportedRegions 返回所有支持的地区列表 (9 个核心区 + 30 个冷门区)
+func AllSupportedRegions() []string {
+	all := make([]string, 0, len(SupportedQuickRegions)+len(RareRegions))
+	all = append(all, SupportedQuickRegions...)
+	all = append(all, RareRegions...)
+	return all
+}
+
 // PricePresets 快捷价格档位
 var PricePresets = []float64{0.2, 0.5, 1.0, 3.0}
 
@@ -146,7 +154,13 @@ func BuildMenuKeyboard(b *tele.Bot, cfg filter.ChatConfig) *tele.ReplyMarkup {
 	}
 	moreBtnText := "🌍 更多冷门地区 (AU/NL/IN/稀缺等) »"
 	if rareSelectedCount > 0 {
-		moreBtnText = fmt.Sprintf("🌍 更多冷门地区 (已选 %d 个) »", rareSelectedCount)
+		if rareSelectedCount == len(RareRegions) {
+			moreBtnText = "🌍 更多冷门地区 (全部开启) »"
+		} else {
+			moreBtnText = fmt.Sprintf("🌍 更多冷门地区 (已选 %d 个) »", rareSelectedCount)
+		}
+	} else if len(cfg.QuickRegions) > 0 {
+		moreBtnText = "🌍 更多冷门地区 (已清空/未开启) »"
 	}
 	btnMore := menu.Data(moreBtnText, "btn_rare_menu")
 
@@ -157,7 +171,7 @@ func BuildMenuKeyboard(b *tele.Bot, cfg filter.ChatConfig) *tele.ReplyMarkup {
 		if cfg.QuickMaxPrice == p {
 			status = "✓"
 		}
-		btnText := fmt.Sprintf("≤$%g%s", p, status)
+		btnText := fmt.Sprintf("≤%g$%s", p, status)
 		priceBtns = append(priceBtns, menu.Data(btnText, "btn_price", fmt.Sprintf("%g", p)))
 	}
 	unlimitStatus := ""
@@ -167,9 +181,9 @@ func BuildMenuKeyboard(b *tele.Bot, cfg filter.ChatConfig) *tele.ReplyMarkup {
 	priceBtns = append(priceBtns, menu.Data("不限"+unlimitStatus, "btn_price", "0"))
 
 	// 3. 底部功能行
-	subText := "🔔 推送中 (点击暂停)"
+	subText := "🔔 监控推送中 (点击暂停)"
 	if !cfg.Subscribed {
-		subText = "🔕 已暂停 (点击开启)"
+		subText = "🔕 监控已暂停 (点击开启)"
 	}
 	actionBtns := []tele.Btn{
 		menu.Data(subText, "btn_sub_toggle"),
@@ -195,9 +209,9 @@ func BuildRareRegionsKeyboard(b *tele.Bot, cfg filter.ChatConfig) *tele.ReplyMar
 	menu := &tele.ReplyMarkup{}
 	var rows []tele.Row
 
-	// 顶部功能行：一键开启全部 和 一键清空全部
-	btnAll := menu.Data("🔄 一键开启全部", "btn_rare_all")
-	btnClear := menu.Data("🧹 一键清空全部", "btn_rare_clear")
+	// 顶部功能行：开启全部冷门 和 清空全部冷门 (作用域仅限冷门地区，不影响一级核心区)
+	btnAll := menu.Data("🔄 开启全部冷门", "btn_rare_all")
+	btnClear := menu.Data("🧹 清空全部冷门", "btn_rare_clear")
 	rows = append(rows, menu.Row(btnAll, btnClear))
 
 	// 冷门地区列表 (3 列排布)
@@ -238,8 +252,9 @@ func RenderRareRegionsText(cfg filter.ChatConfig) string {
 	}
 
 	return fmt.Sprintf("🌍 <b>【更多冷门与特色地区选择】</b>\n\n"+
-		"• <b>白名单状态:</b> %s\n\n"+
-		"<i>💡 顶部可一键全开/清空，点击国家按钮即时开关；随时可一键返回主菜单。</i>", selDesc)
+		"• <b>收录概况:</b> 涵盖欧洲/美洲/亚太等 <b>30</b> 个特色与小众节点\n"+
+		"• <b>当前状态:</b> %s\n\n"+
+		"<i>💡 顶部按钮仅针对冷门地区，绝不影响主菜单核心区设置；点击国家按钮即时开关。</i>", selDesc)
 }
 
 func isRegionSelected(selectedList []string, reg string) bool {

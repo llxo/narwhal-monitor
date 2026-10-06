@@ -44,6 +44,26 @@ func main() {
 		}
 	})
 
+	// 绑定全局系统配置持久化
+	engine.SetOnSaveSettings(func(enabled bool, maxGuests int) {
+		if err := store.SaveSettings(&storage.SystemSettings{
+			GuestModeEnabled: enabled,
+			MaxGuests:        maxGuests,
+		}); err != nil {
+			log.Printf("[存储错误] 异步保存系统配置失败: %v", err)
+		}
+	})
+
+	// 加载系统配置 (游客模式与名额限制)
+	if sysSettings, err := store.LoadSettings(); err == nil && sysSettings != nil {
+		engine.InitSettings(sysSettings.GuestModeEnabled, sysSettings.MaxGuests)
+		guestStatus := "🔴 关闭"
+		if sysSettings.GuestModeEnabled {
+			guestStatus = "🟢 开启"
+		}
+		log.Printf("[系统配置] 游客模式: %s | 名额上限: %d 人", guestStatus, sysSettings.MaxGuests)
+	}
+
 	// 绑定超级管理员（自动赋予永久白名单授权与推送）
 	engine.SetAdminID(cfg.Telegram.AdminID)
 	log.Printf("[鉴权] 超级管理员 ID 已绑定: %d", cfg.Telegram.AdminID)
