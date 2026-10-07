@@ -198,11 +198,12 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 
 	stateTag := "上新/补货"
 	triggerTag := "刚刚补货"
+	allSoldOut := false
 	if evt.Type == monitor.EventPlanNew {
 		stateTag = "全新上架"
 		triggerTag = "全新上架"
 	} else if evt.Type == monitor.EventPlanUpdate {
-		allSoldOut := true
+		allSoldOut = true
 		for _, tp := range trigPlans {
 			if !tp.SoldOut && !tp.RamInsufficient && (tp.Remaining > 0 || tp.Remaining == -1) {
 				allSoldOut = false
@@ -333,11 +334,23 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 		sb.WriteString(fmt.Sprintf("⏰ <i>检测时间: %s</i>", evt.Timestamp.Format("2006-01-02 15:04:05")))
 	}
 
-	// 直达购买按钮 (指向首个触发套餐)
+	// 直达购买按钮 (优先指向有库存套餐，全部售罄时引导至控制台)
 	markup := &tele.ReplyMarkup{}
-	firstDeployURL := fmt.Sprintf("https://dash.fuckip.me/deploy?plan_id=%s", trigPlans[0].ID)
-	btnBuy := markup.URL("🛒 立即下单", firstDeployURL)
-	markup.Inline(markup.Row(btnBuy))
+	if allSoldOut {
+		btnBuy := markup.URL("⚪ 当前已售罄 (前往控制台)", "https://dash.fuckip.me")
+		markup.Inline(markup.Row(btnBuy))
+	} else {
+		targetPlanID := trigPlans[0].ID
+		for _, tp := range trigPlans {
+			if !tp.SoldOut && !tp.RamInsufficient && (tp.Remaining > 0 || tp.Remaining == -1) {
+				targetPlanID = tp.ID
+				break
+			}
+		}
+		firstDeployURL := fmt.Sprintf("https://dash.fuckip.me/deploy?plan_id=%s", targetPlanID)
+		btnBuy := markup.URL("🛒 立即下单", firstDeployURL)
+		markup.Inline(markup.Row(btnBuy))
+	}
 
 	return sb.String(), markup
 }

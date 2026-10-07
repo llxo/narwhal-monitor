@@ -336,7 +336,7 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 		})
 	}
 
-	// 增量更新历史快照（绝不直接覆盖丢弃未返回套餐，彻底杜绝下架又上架导致的失忆与误报）
+	// 增量更新历史快照（保留未返回套餐的最后已知库存，杜绝网络抖动/下架重上架导致的虚假补货刷屏）
 	for _, plan := range plans {
 		currentStock := plan.Remaining
 		if plan.SoldOut || plan.RamInsufficient {

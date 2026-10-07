@@ -10,17 +10,15 @@ import (
 // CardTracker 跟踪各母机卡片在各个 Chat 中的发送记录，支撑动态编辑与智能分流
 type CardTracker struct {
 	mu    sync.RWMutex
-	store *storage.Store
 	cards map[string]*storage.TrackedMachineMsg // machineKey -> TrackedMachineMsg
 }
 
 // NewCardTracker 创建卡片消息生命周期跟踪器
-func NewCardTracker(cards map[string]*storage.TrackedMachineMsg, store *storage.Store) *CardTracker {
+func NewCardTracker(cards map[string]*storage.TrackedMachineMsg) *CardTracker {
 	if cards == nil {
 		cards = make(map[string]*storage.TrackedMachineMsg)
 	}
 	return &CardTracker{
-		store: store,
 		cards: cards,
 	}
 }
@@ -116,9 +114,69 @@ func (t *CardTracker) InvalidateMessage(machineKey string, chatID int64) {
 	}
 }
 
-// GetCards 获取内部卡片快照供持久化
+// CleanExpired 清理超过指定时间未活动的历史记录
+func (t *CardTracker) CleanExpired(maxAge time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	now := time.Now()
+	for k, card := range t.cards {
+		if card == nil {
+			delete(t.cards, k)
+			continue
+		}
+		refTime := card.LastEditAt
+		if refTime.IsZero() {
+			refTime = card.SentAt
+		}
+		if !refTime.IsZero() && now.Sub(refTime) > maxAge {
+			delete(t.cards, k)
+		}
+	}
+}
+
+// GetCards 获取内部卡片快照供持久化（执行深拷贝，切断外部引用，杜绝并发 map 读写 panic）
 func (t *CardTracker) GetCards() map[string]*storage.TrackedMachineMsg {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	return t.cards
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// 顺便淘汰 7 天以上无活动的旧卡片记录
+	now := time.Now()
+	const maxAge = 7 * 24 * time.Hour
+	for k, card := range t.cards {
+		if card == nil {
+			delete(t.cards, k)
+			continue
+		}
+		refTime := card.LastEditAt
+		if refTime.IsZero() {
+			refTime = card.SentAt
+		}
+		if !refTime.IsZero() && now.Sub(refTime) > maxAge {
+			delete(t.cards, k)
+		}
+	}
+
+	result := make(map[string]*storage.TrackedMachineMsg, len(t.cards))
+	for k, v := range t.cards {
+		if v == nil {
+			continue
+		}
+		item := &storage.TrackedMachineMsg{
+			MachineKey: v.MachineKey,
+			SentAt:     v.SentAt,
+			LastEditAt: v.LastEditAt,
+			IsSoldOut:  v.IsSoldOut,
+			MsgIDs:     make(map[int64]int, len(v.MsgIDs)),
+			PlanStocks: make(map[string]int, len(v.PlanStocks)),
+		}
+		for ck, cv := range v.MsgIDs {
+			item.MsgIDs[ck] = cv
+		}
+		for sk, sv := range v.PlanStocks {
+			item.PlanStocks[sk] = sv
+		}
+		result[k] = item
+	}
+	return result
 }

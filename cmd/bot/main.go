@@ -114,7 +114,7 @@ func main() {
 	if err != nil {
 		log.Printf("[存储提示] 初始化监控状态快照: %v", err)
 	}
-	cardTracker := bot.NewCardTracker(stat.TrackedCards, store)
+	cardTracker := bot.NewCardTracker(stat.TrackedCards)
 
 	tgBot, err := bot.NewBot(bot.Config{
 		Token:   cfg.Telegram.BotToken,

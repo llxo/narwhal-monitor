@@ -17,9 +17,14 @@ import (
 )
 
 type pushTask struct {
-	chatID int64
-	text   string
-	markup *tele.ReplyMarkup
+	chatID     int64
+	text       string
+	markup     *tele.ReplyMarkup
+	msgID      int
+	machineKey string
+	stocks     map[string]int
+	isEdit     bool
+	isEditOnly bool
 }
 
 // Bot 是 Telegram 机器人的核心包装器
@@ -27,6 +32,7 @@ type Bot struct {
 	teleBot    *tele.Bot
 	engine     *filter.Engine
 	handler    *Handler
+	tracker    *CardTracker
 	pushQueue  chan pushTask
 	stopChan   chan struct{}
 	lastSendMu sync.Mutex
@@ -118,6 +124,11 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 	return bInstance, nil
 }
 
+// SetTracker 设置卡片消息生命周期追踪器
+func (b *Bot) SetTracker(tracker *CardTracker) {
+	b.tracker = tracker
+}
+
 // Start 启动机器人监听（阻塞）
 func (b *Bot) Start() {
 	log.Printf("[Bot] Telegram Bot @%s 启动成功，开始监听消息与指令...", b.teleBot.Me.Username)
@@ -205,13 +216,56 @@ func (b *Bot) runPushWorker() {
 			b.lastSend[task.chatID] = time.Now()
 			b.lastSendMu.Unlock()
 
-			// 发送消息
+			// 发送或原地编辑消息
 			chat := &tele.Chat{ID: task.chatID}
+			var sentMsg *tele.Message
 			var err error
-			if task.markup != nil && len(task.markup.InlineKeyboard) > 0 {
-				_, err = b.teleBot.Send(chat, task.text, task.markup, tele.ModeHTML, tele.NoPreview)
+
+			if task.isEdit && task.msgID > 0 {
+				msgToEdit := &tele.Message{ID: task.msgID, Chat: chat}
+				if task.markup != nil && len(task.markup.InlineKeyboard) > 0 {
+					sentMsg, err = b.teleBot.Edit(msgToEdit, task.text, task.markup, tele.ModeHTML, tele.NoPreview)
+				} else {
+					sentMsg, err = b.teleBot.Edit(msgToEdit, task.text, tele.ModeHTML, tele.NoPreview)
+				}
+
+				if err == nil {
+					if b.tracker != nil && task.machineKey != "" {
+						b.tracker.RecordEdit(task.machineKey, task.chatID, task.stocks)
+					}
+				} else {
+					errLower := strings.ToLower(err.Error())
+					if strings.Contains(errLower, "message is not modified") {
+						err = nil // 内容无变动，非错误
+					} else if strings.Contains(errLower, "message to edit not found") || strings.Contains(errLower, "message can't be edited") {
+						// 旧消息已失效或被删除
+						if b.tracker != nil && task.machineKey != "" {
+							b.tracker.InvalidateMessage(task.machineKey, task.chatID)
+						}
+						// 仅在非纯扣减更新时降级重新发送新卡片
+						if !task.isEditOnly {
+							if task.markup != nil && len(task.markup.InlineKeyboard) > 0 {
+								sentMsg, err = b.teleBot.Send(chat, task.text, task.markup, tele.ModeHTML, tele.NoPreview)
+							} else {
+								sentMsg, err = b.teleBot.Send(chat, task.text, tele.ModeHTML, tele.NoPreview)
+							}
+							if err == nil && sentMsg != nil && b.tracker != nil && task.machineKey != "" {
+								b.tracker.RecordPush(task.machineKey, task.chatID, sentMsg.ID, task.stocks)
+							}
+						} else {
+							err = nil // 纯售罄/扣减更新且旧消息已不在，静默跳过
+						}
+					}
+				}
 			} else {
-				_, err = b.teleBot.Send(chat, task.text, tele.ModeHTML, tele.NoPreview)
+				if task.markup != nil && len(task.markup.InlineKeyboard) > 0 {
+					sentMsg, err = b.teleBot.Send(chat, task.text, task.markup, tele.ModeHTML, tele.NoPreview)
+				} else {
+					sentMsg, err = b.teleBot.Send(chat, task.text, tele.ModeHTML, tele.NoPreview)
+				}
+				if err == nil && sentMsg != nil && b.tracker != nil && task.machineKey != "" {
+					b.tracker.RecordPush(task.machineKey, task.chatID, sentMsg.ID, task.stocks)
+				}
 			}
 			if err != nil {
 				log.Printf("[推送错误] 向 Chat %d 推送消息失败: %v", task.chatID, err)
@@ -282,7 +336,7 @@ func (b *Bot) DispatchEvent(evt monitor.Event) {
 	var markup *tele.ReplyMarkup
 
 	switch evt.Type {
-	case monitor.EventPlanNew, monitor.EventPlanRestock:
+	case monitor.EventPlanNew, monitor.EventPlanRestock, monitor.EventPlanUpdate:
 		cardText, markup = RenderPlanCard(evt)
 	default:
 		return
@@ -290,6 +344,12 @@ func (b *Bot) DispatchEvent(evt monitor.Event) {
 
 	if cardText == "" {
 		return
+	}
+
+	// 记录触发套餐的最新库存快照
+	stocks := make(map[string]int, len(evt.TriggeredPlans))
+	for _, p := range evt.TriggeredPlans {
+		stocks[p.ID] = p.Remaining
 	}
 
 	// 区分优先级分流：超级管理员与正式白名单享有最高抢占优先级，游客排在其后
@@ -312,8 +372,32 @@ func (b *Bot) DispatchEvent(evt monitor.Event) {
 	dispatchList := append(vipChats, guestChats...)
 
 	for _, chatID := range dispatchList {
+		var targetMsgID int
+		var shouldEdit bool
+
+		if b.tracker != nil && evt.MachineKey != "" {
+			isRestock := (evt.Type == monitor.EventPlanRestock || evt.Type == monitor.EventPlanNew)
+			targetMsgID, shouldEdit = b.tracker.ShouldEdit(evt.MachineKey, chatID, isRestock)
+		}
+
+		// 纯扣减/售罄编辑事件：若该 Chat 之前从未发送过卡片，则无需发新消息打扰
+		if evt.IsEditOnly && (!shouldEdit || targetMsgID <= 0) {
+			continue
+		}
+
+		task := pushTask{
+			chatID:     chatID,
+			text:       cardText,
+			markup:     markup,
+			msgID:      targetMsgID,
+			machineKey: evt.MachineKey,
+			stocks:     stocks,
+			isEdit:     shouldEdit && targetMsgID > 0,
+			isEditOnly: evt.IsEditOnly,
+		}
+
 		select {
-		case b.pushQueue <- pushTask{chatID: chatID, text: cardText, markup: markup}:
+		case b.pushQueue <- task:
 		default:
 			log.Printf("[推送警告] 推送队列已满，丢弃发往 Chat %d 的消息", chatID)
 		}
