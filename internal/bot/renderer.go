@@ -166,11 +166,7 @@ func RenderSettingsText(cfg filter.ChatConfig) string {
 	sb.WriteString(fmt.Sprintf("• <b>地区白名单:</b> <code>%s</code>\n", regDesc))
 	sb.WriteString(fmt.Sprintf("• <b>价格上限:</b> <code>%s</code>\n", priceDesc))
 	sb.WriteString(fmt.Sprintf("• <b>高级自定义规则:</b> %d 条生效中 (/filter list 查看)\n\n", len(cfg.Rules)))
-	if cfg.ChatID < 0 {
-		sb.WriteString("<i>💡 提示: 按钮即点即生效；群内面板 1 分钟未操作自动清屏自毁，亦可随时点击【🗑️ 关闭面板】立即清理</i>")
-	} else {
-		sb.WriteString("<i>💡 提示: 按钮即点即生效；点击“🌍 更多冷门地区”可展开全球 30+ 节点定制</i>")
-	}
+	sb.WriteString("<i>💡 提示: 按钮即点即生效；面板 1 分钟未操作自动清屏自毁，亦可随时点击【🗑️ 关闭面板】立即清理</i>")
 
 	return sb.String()
 }

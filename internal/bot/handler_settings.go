@@ -46,12 +46,10 @@ func (h *Handler) HandleMenu(c tele.Context) error {
 		return err
 	}
 
-	// 群聊场景防护：安排 60 秒滑动自毁，并在 10 秒后清理触发的 /menu 文本指令防刷屏
-	if c.Chat().Type != tele.ChatPrivate {
-		h.scheduleAutoDelete(c.Bot(), msg, 60*time.Second)
-		if c.Message() != nil {
-			h.scheduleAutoDelete(c.Bot(), c.Message(), 10*time.Second)
-		}
+	// 全局安排 60 秒滑动自毁，并在 10 秒后清理触发的 /menu 文本指令保持干净
+	h.scheduleAutoDelete(c.Bot(), msg, 60*time.Second)
+	if c.Message() != nil {
+		h.scheduleAutoDelete(c.Bot(), c.Message(), 10*time.Second)
 	}
 	return nil
 }
@@ -72,9 +70,9 @@ func (h *Handler) HandleBtnCloseMenu(c tele.Context) error {
 	return c.Delete()
 }
 
-// refreshMenuAutoDelete 在群聊按钮交互后刷新 60 秒滑动自毁倒计时
+// refreshMenuAutoDelete 在按钮交互后刷新 60 秒滑动自毁倒计时
 func (h *Handler) refreshMenuAutoDelete(c tele.Context) {
-	if c.Chat() != nil && c.Chat().Type != tele.ChatPrivate && c.Message() != nil {
+	if c.Chat() != nil && c.Message() != nil {
 		h.scheduleAutoDelete(c.Bot(), c.Message(), 60*time.Second)
 	}
 }

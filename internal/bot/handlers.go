@@ -89,17 +89,15 @@ func (h *Handler) cancelAutoDelete(msg *tele.Message) {
 	}
 }
 
-// replyAutoDelete 在群聊场景下发出回显消息并在 10 秒后静默销毁回显与触发命令，私聊中则持久保留
+// replyAutoDelete 发出回显消息并在 10 秒后静默销毁回显与触发命令（私聊与群聊均生效保持无痕）
 func (h *Handler) replyAutoDelete(c tele.Context, text string, opt ...interface{}) error {
 	msg, err := c.Bot().Send(c.Chat(), text, opt...)
 	if err != nil {
 		return err
 	}
-	if c.Chat().Type != tele.ChatPrivate {
-		h.scheduleAutoDelete(c.Bot(), msg, 10*time.Second)
-		if c.Message() != nil {
-			h.scheduleAutoDelete(c.Bot(), c.Message(), 10*time.Second)
-		}
+	h.scheduleAutoDelete(c.Bot(), msg, 10*time.Second)
+	if c.Message() != nil {
+		h.scheduleAutoDelete(c.Bot(), c.Message(), 10*time.Second)
 	}
 	return nil
 }

@@ -39,13 +39,46 @@ func (h *Handler) LoggingMiddleware(next tele.HandlerFunc) tele.HandlerFunc {
 		}
 		log.Printf("[收到交互] Chat: %d | 来自: %d (@%s) | 内容: %s", chatID, senderID, senderName, inText)
 
-		// 群组场景防护：群内普通聊天文本（非 / 开头的指令）静默忽略，杜绝机器人无差别回复报错刷屏
-		if c.Chat().Type != tele.ChatPrivate && !strings.HasPrefix(strings.TrimSpace(c.Text()), "/") && c.Callback() == nil {
-			return nil
+		// 群组场景防护：
+		// 1. 内联按钮点击 (Callback) 始终正常放行
+		// 2. 文本指令在群聊中必须显式带上 @当前Bot (如 /menu@narwhal_monitor_bot)，避免多Bot冲突与刷屏
+		if c.Chat().Type != tele.ChatPrivate && c.Callback() == nil {
+			myUsername := ""
+			if c.Bot() != nil && c.Bot().Me != nil {
+				myUsername = c.Bot().Me.Username
+			}
+			if !isCommandForCurrentBot(c.Text(), myUsername) {
+				return nil
+			}
 		}
 
 		return next(c)
 	}
+}
+
+// isCommandForCurrentBot 判定群聊中的命令是否显式指向当前机器人 (如 /menu@narwhal_monitor_bot)
+func isCommandForCurrentBot(text string, myUsername string) bool {
+	text = strings.TrimSpace(text)
+	if !strings.HasPrefix(text, "/") {
+		return false
+	}
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return false
+	}
+	cmdToken := fields[0]
+
+	atIdx := strings.Index(cmdToken, "@")
+	if atIdx == -1 {
+		// 群聊中未带 @bot，静默忽略防止多 Bot 抢答冲突
+		return false
+	}
+
+	target := cmdToken[atIdx+1:]
+	if myUsername == "" {
+		return false
+	}
+	return strings.EqualFold(target, myUsername)
 }
 
 // RequireAdmin 路由守卫：仅允许超级管理员访问
