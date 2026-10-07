@@ -43,7 +43,7 @@ func (h *Handler) LoggingMiddleware(next tele.HandlerFunc) tele.HandlerFunc {
 		// 群组场景防护：
 		// 1. 内联按钮点击 (Callback) 始终正常放行
 		// 2. 普通聊天文本消息（非 / 开头）静默忽略，杜绝机器人无差别回复或刷屏
-		// 3. 文本指令在群聊中必须显式带上 @当前Bot (如 /menu@narwhal_monitor_bot)，避免多Bot冲突与抢答
+		// 3. 文本指令防护：若显式指向其他 Bot 则静默忽略防止抢答冲突；指向当前 Bot 或未带 @ 的指令正常放行
 		// 4. 其他系统级事件（如 OnAddedToGroup, OnMyChatMember, 非文本事件）放行后续处理
 		if c.Chat().Type != tele.ChatPrivate && c.Callback() == nil {
 			text := strings.TrimSpace(c.Text())
@@ -55,7 +55,7 @@ func (h *Handler) LoggingMiddleware(next tele.HandlerFunc) tele.HandlerFunc {
 				if c.Bot() != nil && c.Bot().Me != nil {
 					myUsername = c.Bot().Me.Username
 				}
-				if !isCommandForCurrentBot(text, myUsername) {
+				if isCommandForOtherBot(text, myUsername) {
 					return nil
 				}
 			}
@@ -65,8 +65,8 @@ func (h *Handler) LoggingMiddleware(next tele.HandlerFunc) tele.HandlerFunc {
 	}
 }
 
-// isCommandForCurrentBot 判定群聊中的命令是否显式指向当前机器人 (如 /menu@narwhal_monitor_bot)
-func isCommandForCurrentBot(text string, myUsername string) bool {
+// isCommandForOtherBot 判定群聊中的命令是否显式指向其他机器人 (如 /start@other_bot)
+func isCommandForOtherBot(text string, myUsername string) bool {
 	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(text, "/") {
 		return false
@@ -77,17 +77,30 @@ func isCommandForCurrentBot(text string, myUsername string) bool {
 	}
 	cmdToken := fields[0]
 
+	// 1. 检查首个命令 token 中是否包含 @ (例如 /menu@other_bot)
 	atIdx := strings.Index(cmdToken, "@")
-	if atIdx == -1 {
-		// 群聊中未带 @bot，静默忽略防止多 Bot 抢答冲突
-		return false
+	if atIdx != -1 {
+		target := cmdToken[atIdx+1:]
+		if target != "" && myUsername != "" && !strings.EqualFold(target, myUsername) {
+			// 显式指向其他机器人，静默忽略防止抢答冲突
+			return true
+		}
 	}
 
-	target := cmdToken[atIdx+1:]
-	if myUsername == "" {
-		return false
+	// 2. 检查是否有独立的 @other_bot 标识 (例如 /help @other_bot)
+	if myUsername != "" {
+		for _, token := range fields[1:] {
+			if strings.HasPrefix(token, "@") {
+				target := token[1:]
+				// 若明确带有其他以 bot 结尾的用户名且不是当前 bot，判定为其他机器人指令
+				if strings.HasSuffix(strings.ToLower(target), "bot") && !strings.EqualFold(target, myUsername) {
+					return true
+				}
+			}
+		}
 	}
-	return strings.EqualFold(target, myUsername)
+
+	return false
 }
 
 // RequireAdmin 路由守卫：仅允许超级管理员访问

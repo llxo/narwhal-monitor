@@ -108,7 +108,7 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 
 	chatID := c.Chat().ID
 	senderID := c.Sender().ID
-	args := strings.Fields(c.Text())
+	args := getCommandArgs(c)
 
 	// ==========================================
 	// 场景 1: 超级管理员操作与管理控制面板
@@ -286,7 +286,7 @@ func (h *Handler) HandleUser(c tele.Context) error {
 		return c.Send("⚠️ 白名单管理指令包含用户隐私，仅限在与 Bot 的私聊中执行。")
 	}
 
-	args := strings.Fields(c.Text())
+	args := getCommandArgs(c)
 	if len(args) <= 1 {
 		usage := `📖 <b>【用户与权限管理指南】</b> (超级管理员专属)
 
