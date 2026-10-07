@@ -24,7 +24,7 @@ func (h *Handler) HandleRegister(c tele.Context) error {
 
 	// 游客体验限制：仅限在与 Bot 的私聊中开通
 	if c.Chat().Type != tele.ChatPrivate {
-		return c.Send("⚠️ 游客体验模式仅限在与 Bot 的【个人私聊】中开通，群组会话暂不支持注册为游客。\n如需在群组中使用监控，请将群组 ID 发送给超级管理员开通专属白名单。", tele.ModeHTML)
+		return h.replyAutoDelete(c, "⚠️ 游客体验模式仅限在与 Bot 的【个人私聊】中开通，群组会话暂不支持注册为游客。\n如需在群组中使用监控，请将群组 ID 发送给超级管理员开通专属白名单。", tele.ModeHTML)
 	}
 
 	// 1. 若是超级管理员
@@ -34,7 +34,7 @@ func (h *Handler) HandleRegister(c tele.Context) error {
 
 	// 2. 若是正式白名单
 	if h.engine.IsAuthorized(chatID) || h.engine.IsAuthorized(senderID) {
-		return c.Send("💎 您已拥有【正式白名单会员】权限，享有 39 地区自选与高级过滤特权，无需降级为游客。", tele.ModeHTML)
+		return h.replyAutoDelete(c, "💎 您已拥有【正式白名单会员】权限，享有 39 地区自选与高级过滤特权，无需降级为游客。", tele.ModeHTML)
 	}
 
 	// 频控保护：避免用户短时间内高频狂刷
@@ -42,7 +42,7 @@ func (h *Handler) HandleRegister(c tele.Context) error {
 	last := h.regLast[senderID]
 	if time.Since(last) < 3*time.Second {
 		h.regMu.Unlock()
-		return c.Send("⏳ 操作过于频繁，请稍候再试。")
+		return h.replyAutoDelete(c, "⏳ 操作过于频繁，请稍候再试。")
 	}
 	h.regLast[senderID] = time.Now()
 	h.regMu.Unlock()
@@ -55,7 +55,7 @@ func (h *Handler) HandleRegister(c tele.Context) error {
 	cfg, isNew, err := h.engine.RegisterGuest(chatID, userRemark)
 	if err != nil {
 		log.Printf("[游客注册拒绝] 用户 %d (@%s) 注册未通过: %v", chatID, userRemark, err)
-		return c.Send(fmt.Sprintf("⚠️ <b>注册未成功:</b> %s", html.EscapeString(err.Error())), tele.ModeHTML)
+		return h.replyAutoDelete(c, fmt.Sprintf("⚠️ <b>注册未成功:</b> %s", html.EscapeString(err.Error())), tele.ModeHTML)
 	}
 
 	// 若已是游客且此前重复触发
@@ -64,7 +64,7 @@ func (h *Handler) HandleRegister(c tele.Context) error {
 		if !cfg.Subscribed {
 			statusStr = "🔕 已暂停"
 		}
-		return c.Send(fmt.Sprintf("ℹ️ <b>您当前已是【Narwhal 游客用户】</b>\n\n"+
+		return h.replyAutoDelete(c, fmt.Sprintf("ℹ️ <b>您当前已是【Narwhal 游客用户】</b>\n\n"+
 			"• <b>推送通道:</b> 🟢 默认激活（全量未过滤上新与补货）\n"+
 			"• <b>推送状态:</b> %s\n"+
 			"• <b>推送管理:</b> 发送 <code>/sub</code> 切换开启/暂停，发送 <code>/guest leave</code> 注销退出\n\n"+
@@ -93,7 +93,7 @@ func (h *Handler) HandleRegister(c tele.Context) error {
 		}()
 	}
 
-	return c.Send("🎉 <b>恭喜！您已成功登记为【Narwhal 游客用户】</b>\n\n"+
+	return h.replyAutoDelete(c, "🎉 <b>恭喜！您已成功登记为【Narwhal 游客用户】</b>\n\n"+
 		"• <b>推送通道:</b> 🟢 默认激活（接收平台<b>全部未过滤</b>的上新与补货通知）\n"+
 		"• <b>推送管理:</b> 发送 <code>/sub</code> 即可一键开启/暂停，发送 <code>/guest leave</code> 可注销退出\n\n"+
 		"<i>💡 游客模式为全量广播体验；自选地区与高级过滤仅对【正式白名单会员】开放。</i>", tele.ModeHTML)
@@ -224,9 +224,9 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 		if sub == "leave" || sub == "exit" || sub == "quit" || sub == "off" {
 			if h.engine.UnregisterGuest(chatID) || h.engine.UnregisterGuest(senderID) {
 				log.Printf("[游客退出] 用户 %d 主动注销游客", senderID)
-				return c.Send("👋 您已成功退出游客名单，停止接收全量补货推送。\n<i>(后续随时可再次发送 /register 重新加入体验)</i>", tele.ModeHTML)
+				return h.replyAutoDelete(c, "👋 您已成功退出游客名单，停止接收全量补货推送。\n<i>(后续随时可再次发送 /register 重新加入体验)</i>", tele.ModeHTML)
 			}
-			return c.Send("您当前未登记为游客。", tele.ModeHTML)
+			return h.replyAutoDelete(c, "您当前未登记为游客。", tele.ModeHTML)
 		}
 	}
 
@@ -234,7 +234,7 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 	// 场景 3: 正式白名单会员调用 /guest
 	// ==========================================
 	if h.engine.IsAuthorized(chatID) || h.engine.IsAuthorized(senderID) {
-		return c.Send("💎 <b>您当前已拥有【正式白名单会员】权限</b>\n\n"+
+		return h.replyAutoDelete(c, "💎 <b>您当前已拥有【正式白名单会员】权限</b>\n\n"+
 			"• 您已解锁 39 地区自选、极低限价与线路高级正则过滤特权，推送通道享有最高抢占优先级！\n"+
 			"• 无需降级为游客体验模式。\n\n"+
 			"<i>💡 发送 <code>/menu</code> 打开您的专属定制面板，发送 <code>/sub</code> 可随时启闭推送。</i>", tele.ModeHTML)
@@ -250,7 +250,7 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 			statusStr = "🔕 已暂停推送"
 		}
 
-		return c.Send(fmt.Sprintf("👤 <b>【Narwhal 游客模式当前状态】</b>\n\n"+
+		return h.replyAutoDelete(c, fmt.Sprintf("👤 <b>【Narwhal 游客模式当前状态】</b>\n\n"+
 			"• <b>身份权限:</b> 👤 游客体验模式\n"+
 			"• <b>您的 ID:</b> <code>%d</code>\n"+
 			"• <b>推送通道:</b> 🟢 平台全部未过滤补货广播\n"+
@@ -271,7 +271,7 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 		statusTip = "🔴 当前暂未开放注册 (请联系管理员)"
 	}
 
-	return c.Send(fmt.Sprintf("👋 <b>【Narwhal Cloud 游客体验模式说明】</b>\n\n"+
+	return h.replyAutoDelete(c, fmt.Sprintf("👋 <b>【Narwhal Cloud 游客体验模式说明】</b>\n\n"+
 		"游客模式是为外部 VPS 玩家提供的免费轻量监控体验通道。\n\n"+
 		"• <b>通道特性:</b> 免费接收平台全部未过滤的最新补货与上新推送\n"+
 		"• <b>当前状态:</b> %s\n\n"+

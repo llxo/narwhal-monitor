@@ -39,11 +39,8 @@ func (h *Handler) HandleMenu(c tele.Context) error {
 		return err
 	}
 
-	// 全局安排 60 秒滑动自毁，并在 10 秒后清理触发的 /menu 文本指令保持干净
+	// 全局安排 60 秒滑动自毁（原触发指令不清理保持会话记录）
 	h.scheduleAutoDelete(c.Bot(), msg, 60*time.Second)
-	if c.Message() != nil {
-		h.scheduleAutoDelete(c.Bot(), c.Message(), 10*time.Second)
-	}
 	return nil
 }
 
