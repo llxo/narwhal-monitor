@@ -20,6 +20,11 @@ import (
 	"narwhal-monitor/internal/filter"
 )
 
+type autoDeleteTracker struct {
+	mu     sync.Mutex
+	timers map[string]*time.Timer // "chatID:msgID" -> *time.Timer
+}
+
 // Handler 集中管理 Telegram 命令路由分发与业务调度
 type Handler struct {
 	engine         *filter.Engine
@@ -30,6 +35,7 @@ type Handler struct {
 	lastDirectPoll time.Time
 	regMu          sync.Mutex
 	regLast        map[int64]time.Time
+	autoDeleter    autoDeleteTracker
 }
 
 // NewHandler 创建 Handler 实例
@@ -40,7 +46,62 @@ func NewHandler(engine *filter.Engine, apiClient *api.Client, adminID int64) *Ha
 		adminID:   adminID,
 		startTime: time.Now(),
 		regLast:   make(map[int64]time.Time),
+		autoDeleter: autoDeleteTracker{
+			timers: make(map[string]*time.Timer),
+		},
 	}
+}
+
+// scheduleAutoDelete 为指定消息安排或刷新定时静音自毁
+func (h *Handler) scheduleAutoDelete(b *tele.Bot, msg *tele.Message, d time.Duration) {
+	if b == nil || msg == nil || d <= 0 {
+		return
+	}
+	key := fmt.Sprintf("%d:%d", msg.Chat.ID, msg.ID)
+	h.autoDeleter.mu.Lock()
+	defer h.autoDeleter.mu.Unlock()
+
+	if t, exists := h.autoDeleter.timers[key]; exists {
+		t.Stop()
+	}
+
+	h.autoDeleter.timers[key] = time.AfterFunc(d, func() {
+		h.autoDeleter.mu.Lock()
+		delete(h.autoDeleter.timers, key)
+		h.autoDeleter.mu.Unlock()
+
+		_ = b.Delete(msg)
+	})
+}
+
+// cancelAutoDelete 取消消息的自动销毁任务
+func (h *Handler) cancelAutoDelete(msg *tele.Message) {
+	if msg == nil {
+		return
+	}
+	key := fmt.Sprintf("%d:%d", msg.Chat.ID, msg.ID)
+	h.autoDeleter.mu.Lock()
+	defer h.autoDeleter.mu.Unlock()
+
+	if t, exists := h.autoDeleter.timers[key]; exists {
+		t.Stop()
+		delete(h.autoDeleter.timers, key)
+	}
+}
+
+// replyAutoDelete 在群聊场景下发出回显消息并在 10 秒后静默销毁回显与触发命令，私聊中则持久保留
+func (h *Handler) replyAutoDelete(c tele.Context, text string, opt ...interface{}) error {
+	msg, err := c.Bot().Send(c.Chat(), text, opt...)
+	if err != nil {
+		return err
+	}
+	if c.Chat().Type != tele.ChatPrivate {
+		h.scheduleAutoDelete(c.Bot(), msg, 10*time.Second)
+		if c.Message() != nil {
+			h.scheduleAutoDelete(c.Bot(), c.Message(), 10*time.Second)
+		}
+	}
+	return nil
 }
 
 // RegisterRoutes 统一挂载全局门禁中间件与声明式路由分组
@@ -73,6 +134,7 @@ func (h *Handler) RegisterRoutes(b *tele.Bot) {
 	member.Handle(&tele.Btn{Unique: "btn_price"}, h.HandleBtnPrice)
 	member.Handle(&tele.Btn{Unique: "btn_sub_toggle"}, h.HandleBtnSubToggle)
 	member.Handle(&tele.Btn{Unique: "btn_refresh"}, h.HandleBtnRefresh)
+	member.Handle(&tele.Btn{Unique: "btn_close_menu"}, h.HandleBtnCloseMenu)
 	member.Handle(&tele.Btn{Unique: "btn_rare_menu"}, h.HandleBtnRareMenu)
 	member.Handle(&tele.Btn{Unique: "btn_rare_toggle"}, h.HandleBtnRareToggle)
 	member.Handle(&tele.Btn{Unique: "btn_rare_all"}, h.HandleBtnRareAll)

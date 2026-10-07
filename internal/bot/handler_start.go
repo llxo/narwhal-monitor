@@ -209,11 +209,11 @@ func (h *Handler) HandleSub(c tele.Context) error {
 
 	if newSub {
 		log.Printf("[订阅切换] 会话 %d 开启推送通知", chatID)
-		return c.Send("🔔 <b>通知推送已开启！</b>\n有满足条件的新补货将第一时间推送给您。\n<i>(再次发送 <code>/sub</code> 可随时暂停推送)</i>", tele.ModeHTML)
+		return h.replyAutoDelete(c, "🔔 <b>通知推送已开启！</b>\n有满足条件的新补货将第一时间推送给您。\n<i>(再次发送 <code>/sub</code> 可随时暂停推送)</i>", tele.ModeHTML)
 	}
 
 	log.Printf("[订阅切换] 会话 %d 暂停推送通知", chatID)
-	return c.Send("🔕 <b>通知推送已暂停！</b>\n已暂时停止向该会话发送补货通知。\n<i>(再次发送 <code>/sub</code> 即可立即恢复接收)</i>", tele.ModeHTML)
+	return h.replyAutoDelete(c, "🔕 <b>通知推送已暂停！</b>\n已暂时停止向该会话发送补货通知。\n<i>(再次发送 <code>/sub</code> 即可立即恢复接收)</i>", tele.ModeHTML)
 }
 
 // HandleMute /mute 临时免打扰
@@ -222,20 +222,20 @@ func (h *Handler) HandleMute(c tele.Context) error {
 	chatID := c.Chat().ID
 
 	if len(args) <= 1 {
-		return c.Send("用法: <code>/mute 1h</code> (免打扰1小时)，或 <code>/mute 0</code> (解除静音)", tele.ModeHTML)
+		return h.replyAutoDelete(c, "用法: <code>/mute 1h</code> (免打扰1小时)，或 <code>/mute 0</code> (解除静音)", tele.ModeHTML)
 	}
 
 	durationStr := args[1]
 	if durationStr == "0" || durationStr == "off" {
 		h.engine.SetMute(chatID, 0)
-		return c.Send("🔔 已解除静音，恢复正常接收通知！")
+		return h.replyAutoDelete(c, "🔔 已解除静音，恢复正常接收通知！")
 	}
 
 	d, err := time.ParseDuration(durationStr)
 	if err != nil {
-		return c.Send("❌ 时长格式不合法，支持如: <code>30m</code>, <code>1h</code>, <code>2h</code>, <code>24h</code>", tele.ModeHTML)
+		return h.replyAutoDelete(c, "❌ 时长格式不合法，支持如: <code>30m</code>, <code>1h</code>, <code>2h</code>, <code>24h</code>", tele.ModeHTML)
 	}
 
 	until := h.engine.SetMute(chatID, d)
-	return c.Send(fmt.Sprintf("🔕 已开启临时免打扰，直到 <b>%s</b> 为止（持续 %v）。", until.Format("2006-01-02 15:04:05"), d), tele.ModeHTML)
+	return h.replyAutoDelete(c, fmt.Sprintf("🔕 已开启临时免打扰，直到 <b>%s</b> 为止（持续 %v）。", until.Format("2006-01-02 15:04:05"), d), tele.ModeHTML)
 }

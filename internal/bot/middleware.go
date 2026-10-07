@@ -97,16 +97,17 @@ func (h *Handler) RequireMember(next tele.HandlerFunc) tele.HandlerFunc {
 				return c.Send(text, tele.ModeHTML)
 			}
 
-			// 群组已授权，但发言者/点击者并非群管理员
-			if !h.hasPermission(c) {
-				log.Printf("[权限拦截] 群组 %d 普通成员 %d 尝试操作会员接口", chatID, senderID)
+			// 群组已授权，检查操作者是否具备群管理权限
+			perm := h.checkPermission(c)
+			if !perm.Allowed {
+				log.Printf("[权限拦截] 群组 %d 用户 %d 尝试操作会员接口被拒: %s", chatID, senderID, perm.Reason)
 				if c.Callback() != nil {
 					return c.Respond(&tele.CallbackResponse{
-						Text:      "⚠️ 权限不足: 仅群管理员或群主有权调整群监控设置",
+						Text:      "⚠️ 权限不足: " + perm.Reason,
 						ShowAlert: true,
 					})
 				}
-				return c.Send("⚠️ 权限不足: 仅群管理员或群主有权操作群监控配置。")
+				return c.Send("⚠️ 权限不足: " + perm.Reason + "。")
 			}
 
 			return next(c)
@@ -158,7 +159,8 @@ func (h *Handler) RequireMember(next tele.HandlerFunc) tele.HandlerFunc {
 // RequireControlPermission 路由守卫：用于 /sub 与 /mute（允许正式白名单与游客控制自身会话）
 func (h *Handler) RequireControlPermission(next tele.HandlerFunc) tele.HandlerFunc {
 	return func(c tele.Context) error {
-		if h.hasControlPermission(c) {
+		perm := h.checkControlPermission(c)
+		if perm.Allowed {
 			return next(c)
 		}
 
@@ -166,65 +168,117 @@ func (h *Handler) RequireControlPermission(next tele.HandlerFunc) tele.HandlerFu
 		if c.Sender() != nil {
 			senderID = c.Sender().ID
 		}
-		log.Printf("[权限拦截] 用户 %d 无权调整通知推送开关", senderID)
+		log.Printf("[权限拦截] 用户 %d 无权调整通知推送开关: %s", senderID, perm.Reason)
 		if c.Callback() != nil {
 			return c.Respond(&tele.CallbackResponse{
-				Text:      "⚠️ 权限不足: 仅管理员或群主有权调整开关",
+				Text:      "⚠️ 权限不足: " + perm.Reason,
 				ShowAlert: true,
 			})
 		}
-		return c.Send("⚠️ 权限不足: 仅管理员或群主有权调整通知推送开关。")
+		return c.Send("⚠️ 权限不足: " + perm.Reason + "。")
 	}
 }
 
-// hasPermission 校验当前发送者是否有权修改监控设置 (仅限管理员与正式白名单)
-func (h *Handler) hasPermission(c tele.Context) bool {
-	if c.Sender() == nil {
-		return false
+// PermissionResult 包含权限校验结果与诊断说明
+type PermissionResult struct {
+	Allowed bool
+	Reason  string
+}
+
+// checkPermission 统一校验当前发送者是否有权修改监控设置 (仅限管理员与正式白名单)
+func (h *Handler) checkPermission(c tele.Context) PermissionResult {
+	if c.Chat() == nil {
+		return PermissionResult{Allowed: false, Reason: "会话无效"}
 	}
-	senderID := c.Sender().ID
 	chatID := c.Chat().ID
+	senderID := int64(0)
+	if c.Sender() != nil {
+		senderID = c.Sender().ID
+	}
 
 	// 1. 超级管理员始终拥有最高控制权
 	if h.isAdmin(c) {
-		return true
+		return PermissionResult{Allowed: true}
 	}
 
 	// 2. 私聊场景：白名单用户对其个人专属会话拥有 100% 自主配置权
 	if c.Chat().Type == tele.ChatPrivate {
-		return h.engine.IsAuthorized(chatID)
+		if h.engine.IsAuthorized(chatID) {
+			return PermissionResult{Allowed: true}
+		}
+		return PermissionResult{Allowed: false, Reason: "当前私聊未在授权白名单中"}
 	}
 
-	// 3. 群组场景：必须是已授权群组，且仅允许群管理员或群主进行设置调整
+	// 3. 群组场景：群必须在白名单中
 	if !h.engine.IsAuthorized(chatID) {
-		return false
-	}
-	admins, err := c.Bot().AdminsOf(c.Chat())
-	if err != nil {
-		return false // 无法获取管理员列表时严格拒绝 (Fail-Closed)
-	}
-	for _, admin := range admins {
-		if admin.User != nil && admin.User.ID == senderID {
-			return true
+		return PermissionResult{
+			Allowed: false,
+			Reason:  fmt.Sprintf("当前群组未在授权白名单中 (ID: %d)", chatID),
 		}
 	}
-	return false
+
+	// 4. 群组内匿名管理员检查 (Telegram Anonymous Admin)
+	// 4.1 发送者为群身份本身 (例如开启以群身份/频道身份发言，SenderChat == Chat)
+	if c.Message() != nil && c.Message().SenderChat != nil && c.Message().SenderChat.ID == chatID {
+		return PermissionResult{Allowed: true}
+	}
+	// 4.2 匿名管理员虚拟用户 ID (1087968824 GroupAnonymousBot)
+	if senderID == 1087968824 {
+		return PermissionResult{Allowed: true}
+	}
+
+	// 5. 群组内实名管理员检查：从 Telegram 获取当前群的管理员列表
+	admins, err := c.Bot().AdminsOf(c.Chat())
+	if err != nil {
+		log.Printf("[群管权限检查失败] 获取群组 %d 管理员列表失败: %v", chatID, err)
+		return PermissionResult{
+			Allowed: false,
+			Reason:  "无法获取本群管理员列表，请确认是否已将机器人设为群管理员",
+		}
+	}
+
+	for _, admin := range admins {
+		if admin.User != nil && admin.User.ID == senderID {
+			return PermissionResult{Allowed: true}
+		}
+	}
+
+	return PermissionResult{
+		Allowed: false,
+		Reason:  "仅群管理员或群主有权调整群监控设置",
+	}
 }
 
-// hasControlPermission 校验当前发送者是否有权调整基础通知开关与静音 (支持正式白名单与有效游客)
-func (h *Handler) hasControlPermission(c tele.Context) bool {
+// hasPermission 兼容布尔值判定的便捷方法
+func (h *Handler) hasPermission(c tele.Context) bool {
+	return h.checkPermission(c).Allowed
+}
+
+// checkControlPermission 校验当前发送者是否有权调整基础通知开关与静音 (支持正式白名单与有效游客)
+func (h *Handler) checkControlPermission(c tele.Context) PermissionResult {
 	if h.isAdmin(c) {
-		return true
+		return PermissionResult{Allowed: true}
+	}
+	if c.Chat() == nil {
+		return PermissionResult{Allowed: false, Reason: "会话无效"}
 	}
 	chatID := c.Chat().ID
 
 	// 私聊场景：正式白名单会员或游客均对其个人会话拥有启闭通知与静音的权利
 	if c.Chat().Type == tele.ChatPrivate {
-		return h.engine.IsAuthorized(chatID) || h.engine.IsGuest(chatID)
+		if h.engine.IsAuthorized(chatID) || h.engine.IsGuest(chatID) {
+			return PermissionResult{Allowed: true}
+		}
+		return PermissionResult{Allowed: false, Reason: "当前私聊未在授权白名单中"}
 	}
 
 	// 群组场景：必须是已授权会话且操作者为群管（群组不支持游客）
-	return h.hasPermission(c)
+	return h.checkPermission(c)
+}
+
+// hasControlPermission 兼容布尔值判定的便捷方法
+func (h *Handler) hasControlPermission(c tele.Context) bool {
+	return h.checkControlPermission(c).Allowed
 }
 
 func (h *Handler) isAdmin(c tele.Context) bool {

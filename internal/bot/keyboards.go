@@ -185,20 +185,23 @@ func BuildMenuKeyboard(b *tele.Bot, cfg filter.ChatConfig) *tele.ReplyMarkup {
 	if !cfg.Subscribed {
 		subText = "🔕 监控已暂停 (点击开启)"
 	}
-	actionBtns := []tele.Btn{
-		menu.Data(subText, "btn_sub_toggle"),
+	rowSub := menu.Row(menu.Data(subText, "btn_sub_toggle"))
+
+	toolBtns := []tele.Btn{
 		menu.Data("🔄 刷新", "btn_refresh"),
+		menu.Data("🗑️ 关闭面板", "btn_close_menu"),
 	}
 	if cfg.IsAdmin {
-		actionBtns = append(actionBtns, menu.Data("👑 管理", "btn_admin_menu"))
+		toolBtns = append(toolBtns, menu.Data("👑 管理", "btn_admin_menu"))
 	}
+	rowTools := menu.Row(toolBtns...)
 
 	// 组装所有行
 	var allRows []tele.Row
 	allRows = append(allRows, regRows...)
 	allRows = append(allRows, menu.Row(btnMore))
 	allRows = append(allRows, menu.Row(priceBtns...))
-	allRows = append(allRows, menu.Row(actionBtns...))
+	allRows = append(allRows, rowSub, rowTools)
 
 	menu.Inline(allRows...)
 	return menu
@@ -235,9 +238,10 @@ func BuildRareRegionsKeyboard(b *tele.Bot, cfg filter.ChatConfig) *tele.ReplyMar
 		rows = append(rows, menu.Row(rowBtns...))
 	}
 
-	// 底部返回主控制台按钮
+	// 底部返回主控制台与关闭面板按钮
 	btnBack := menu.Data("« 🏠 返回主控制台", "btn_menu_home")
-	rows = append(rows, menu.Row(btnBack))
+	btnClose := menu.Data("🗑️ 关闭面板", "btn_close_menu")
+	rows = append(rows, menu.Row(btnBack, btnClose))
 
 	menu.Inline(rows...)
 	return menu
