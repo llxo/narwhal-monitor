@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	tele "gopkg.in/telebot.v3"
 )
@@ -41,14 +42,22 @@ func (h *Handler) LoggingMiddleware(next tele.HandlerFunc) tele.HandlerFunc {
 
 		// 群组场景防护：
 		// 1. 内联按钮点击 (Callback) 始终正常放行
-		// 2. 文本指令在群聊中必须显式带上 @当前Bot (如 /menu@narwhal_monitor_bot)，避免多Bot冲突与刷屏
+		// 2. 普通聊天文本消息（非 / 开头）静默忽略，杜绝机器人无差别回复或刷屏
+		// 3. 文本指令在群聊中必须显式带上 @当前Bot (如 /menu@narwhal_monitor_bot)，避免多Bot冲突与抢答
+		// 4. 其他系统级事件（如 OnAddedToGroup, OnMyChatMember, 非文本事件）放行后续处理
 		if c.Chat().Type != tele.ChatPrivate && c.Callback() == nil {
-			myUsername := ""
-			if c.Bot() != nil && c.Bot().Me != nil {
-				myUsername = c.Bot().Me.Username
-			}
-			if !isCommandForCurrentBot(c.Text(), myUsername) {
-				return nil
+			text := strings.TrimSpace(c.Text())
+			if text != "" {
+				if !strings.HasPrefix(text, "/") {
+					return nil
+				}
+				myUsername := ""
+				if c.Bot() != nil && c.Bot().Me != nil {
+					myUsername = c.Bot().Me.Username
+				}
+				if !isCommandForCurrentBot(text, myUsername) {
+					return nil
+				}
 			}
 		}
 
@@ -260,8 +269,8 @@ func (h *Handler) checkPermission(c tele.Context) PermissionResult {
 		return PermissionResult{Allowed: true}
 	}
 
-	// 5. 群组内实名管理员检查：从 Telegram 获取当前群的管理员列表
-	admins, err := c.Bot().AdminsOf(c.Chat())
+	// 5. 群组内实名管理员检查：从 Telegram 获取当前群的管理员列表（带 2 分钟本地缓存与网络容灾）
+	isAdmin, err := h.isGroupAdmin(c.Bot(), c.Chat(), senderID)
 	if err != nil {
 		log.Printf("[群管权限检查失败] 获取群组 %d 管理员列表失败: %v", chatID, err)
 		return PermissionResult{
@@ -270,10 +279,8 @@ func (h *Handler) checkPermission(c tele.Context) PermissionResult {
 		}
 	}
 
-	for _, admin := range admins {
-		if admin.User != nil && admin.User.ID == senderID {
-			return PermissionResult{Allowed: true}
-		}
+	if isAdmin {
+		return PermissionResult{Allowed: true}
 	}
 
 	return PermissionResult{
@@ -320,3 +327,52 @@ func (h *Handler) isAdmin(c tele.Context) bool {
 	}
 	return c.Sender().ID == h.adminID
 }
+
+// isGroupAdmin 校验指定用户是否为群管理员（带 2 分钟本地内存缓存与网络容灾降级）
+func (h *Handler) isGroupAdmin(b *tele.Bot, chat *tele.Chat, userID int64) (bool, error) {
+	if b == nil || chat == nil {
+		return false, fmt.Errorf("bot or chat is nil")
+	}
+	chatID := chat.ID
+
+	// 1. 优先读取内存缓存
+	h.adminCacheMu.RLock()
+	entry, exists := h.adminCache[chatID]
+	h.adminCacheMu.RUnlock()
+
+	now := time.Now()
+	if exists && now.Before(entry.expiresAt) {
+		_, ok := entry.adminIDs[userID]
+		return ok, nil
+	}
+
+	// 2. 缓存过期或未命中，调用 Telegram API 获取最新群管列表
+	admins, err := b.AdminsOf(chat)
+	if err != nil {
+		// 容灾策略：若网络请求异常但已有旧缓存，优雅降级复用旧数据
+		if exists {
+			_, ok := entry.adminIDs[userID]
+			return ok, nil
+		}
+		return false, err
+	}
+
+	// 3. 构建最新管理员哈希映射并写入缓存（有效期 2 分钟）
+	newMap := make(map[int64]struct{}, len(admins))
+	for _, admin := range admins {
+		if admin.User != nil {
+			newMap[admin.User.ID] = struct{}{}
+		}
+	}
+
+	h.adminCacheMu.Lock()
+	h.adminCache[chatID] = adminCacheEntry{
+		adminIDs:  newMap,
+		expiresAt: now.Add(2 * time.Minute),
+	}
+	h.adminCacheMu.Unlock()
+
+	_, ok := newMap[userID]
+	return ok, nil
+}
+

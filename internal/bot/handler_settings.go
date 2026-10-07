@@ -31,13 +31,6 @@ import (
 // HandleMenu /menu 打开白名单内联控制台菜单
 func (h *Handler) HandleMenu(c tele.Context) error {
 	chatID := c.Chat().ID
-	if c.Chat().Type != tele.ChatPrivate {
-		perm := h.checkPermission(c)
-		if !perm.Allowed {
-			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
-		}
-	}
-
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderSettingsText(cfg)
 	markup := BuildMenuKeyboard(c.Bot(), cfg)
@@ -56,13 +49,6 @@ func (h *Handler) HandleMenu(c tele.Context) error {
 
 // HandleBtnCloseMenu 点击【🗑️ 关闭面板】主动销毁控制台
 func (h *Handler) HandleBtnCloseMenu(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{
-			Text:      "⚠️ 权限不足: " + perm.Reason,
-			ShowAlert: true,
-		})
-	}
 	_ = c.Respond()
 	if c.Message() != nil {
 		h.cancelAutoDelete(c.Message())
@@ -406,10 +392,6 @@ func (h *Handler) parseAndAddRule(c tele.Context, chatID int64, tokens []string)
 // ---- 白名单内联按钮交互回调 ----
 
 func (h *Handler) HandleBtnRegion(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	region := c.Data()
 	chatID := c.Chat().ID
@@ -426,10 +408,6 @@ func (h *Handler) HandleBtnRegion(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnPrice(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	priceStr := c.Data()
 	chatID := c.Chat().ID
@@ -444,10 +422,6 @@ func (h *Handler) HandleBtnPrice(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnSubToggle(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	cfg := h.engine.GetChatConfig(chatID)
@@ -461,10 +435,6 @@ func (h *Handler) HandleBtnSubToggle(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRefresh(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	h.refreshMenuAutoDelete(c)
@@ -475,10 +445,6 @@ func (h *Handler) HandleBtnRefresh(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRareMenu(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	h.refreshMenuAutoDelete(c)
@@ -489,10 +455,6 @@ func (h *Handler) HandleBtnRareMenu(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRareToggle(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	reg := strings.ToUpper(strings.TrimSpace(c.Data()))
 	chatID := c.Chat().ID
@@ -509,10 +471,6 @@ func (h *Handler) HandleBtnRareToggle(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRareAll(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	// 仅开启全部冷门地区，严格保留一级核心区的现状
@@ -526,10 +484,6 @@ func (h *Handler) HandleBtnRareAll(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRareClear(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	// 仅清空全部冷门地区，严格保留一级核心区的现状
@@ -543,10 +497,6 @@ func (h *Handler) HandleBtnRareClear(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnMenuHome(c tele.Context) error {
-	perm := h.checkPermission(c)
-	if !perm.Allowed {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: " + perm.Reason, ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	h.refreshMenuAutoDelete(c)

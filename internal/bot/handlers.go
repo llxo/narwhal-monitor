@@ -25,6 +25,11 @@ type autoDeleteTracker struct {
 	timers map[string]*time.Timer // "chatID:msgID" -> *time.Timer
 }
 
+type adminCacheEntry struct {
+	adminIDs  map[int64]struct{}
+	expiresAt time.Time
+}
+
 // Handler 集中管理 Telegram 命令路由分发与业务调度
 type Handler struct {
 	engine         *filter.Engine
@@ -36,6 +41,8 @@ type Handler struct {
 	regMu          sync.Mutex
 	regLast        map[int64]time.Time
 	autoDeleter    autoDeleteTracker
+	adminCacheMu   sync.RWMutex
+	adminCache     map[int64]adminCacheEntry
 }
 
 // NewHandler 创建 Handler 实例
@@ -49,12 +56,13 @@ func NewHandler(engine *filter.Engine, apiClient *api.Client, adminID int64) *Ha
 		autoDeleter: autoDeleteTracker{
 			timers: make(map[string]*time.Timer),
 		},
+		adminCache: make(map[int64]adminCacheEntry),
 	}
 }
 
 // scheduleAutoDelete 为指定消息安排或刷新定时静音自毁
 func (h *Handler) scheduleAutoDelete(b *tele.Bot, msg *tele.Message, d time.Duration) {
-	if b == nil || msg == nil || d <= 0 {
+	if b == nil || msg == nil || msg.Chat == nil || d <= 0 {
 		return
 	}
 	key := fmt.Sprintf("%d:%d", msg.Chat.ID, msg.ID)
@@ -76,7 +84,7 @@ func (h *Handler) scheduleAutoDelete(b *tele.Bot, msg *tele.Message, d time.Dura
 
 // cancelAutoDelete 取消消息的自动销毁任务
 func (h *Handler) cancelAutoDelete(msg *tele.Message) {
-	if msg == nil {
+	if msg == nil || msg.Chat == nil {
 		return
 	}
 	key := fmt.Sprintf("%d:%d", msg.Chat.ID, msg.ID)
