@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	tele "gopkg.in/telebot.v3"
 )
@@ -39,13 +40,54 @@ func (h *Handler) LoggingMiddleware(next tele.HandlerFunc) tele.HandlerFunc {
 		}
 		log.Printf("[收到交互] Chat: %d | 来自: %d (@%s) | 内容: %s", chatID, senderID, senderName, inText)
 
-		// 群组场景防护：群内普通聊天文本（非 / 开头的指令）静默忽略，杜绝机器人无差别回复报错刷屏
-		if c.Chat().Type != tele.ChatPrivate && !strings.HasPrefix(strings.TrimSpace(c.Text()), "/") && c.Callback() == nil {
-			return nil
+		// 群组场景防护：
+		// 1. 内联按钮点击 (Callback) 始终正常放行
+		// 2. 普通聊天文本消息（非 / 开头）静默忽略，杜绝机器人无差别回复或刷屏
+		// 3. 文本指令在群聊中必须显式带上 @当前Bot (如 /menu@narwhal_monitor_bot)，避免多Bot冲突与抢答
+		// 4. 其他系统级事件（如 OnAddedToGroup, OnMyChatMember, 非文本事件）放行后续处理
+		if c.Chat().Type != tele.ChatPrivate && c.Callback() == nil {
+			text := strings.TrimSpace(c.Text())
+			if text != "" {
+				if !strings.HasPrefix(text, "/") {
+					return nil
+				}
+				myUsername := ""
+				if c.Bot() != nil && c.Bot().Me != nil {
+					myUsername = c.Bot().Me.Username
+				}
+				if !isCommandForCurrentBot(text, myUsername) {
+					return nil
+				}
+			}
 		}
 
 		return next(c)
 	}
+}
+
+// isCommandForCurrentBot 判定群聊中的命令是否显式指向当前机器人 (如 /menu@narwhal_monitor_bot)
+func isCommandForCurrentBot(text string, myUsername string) bool {
+	text = strings.TrimSpace(text)
+	if !strings.HasPrefix(text, "/") {
+		return false
+	}
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return false
+	}
+	cmdToken := fields[0]
+
+	atIdx := strings.Index(cmdToken, "@")
+	if atIdx == -1 {
+		// 群聊中未带 @bot，静默忽略防止多 Bot 抢答冲突
+		return false
+	}
+
+	target := cmdToken[atIdx+1:]
+	if myUsername == "" {
+		return false
+	}
+	return strings.EqualFold(target, myUsername)
 }
 
 // RequireAdmin 路由守卫：仅允许超级管理员访问
@@ -97,16 +139,17 @@ func (h *Handler) RequireMember(next tele.HandlerFunc) tele.HandlerFunc {
 				return c.Send(text, tele.ModeHTML)
 			}
 
-			// 群组已授权，但发言者/点击者并非群管理员
-			if !h.hasPermission(c) {
-				log.Printf("[权限拦截] 群组 %d 普通成员 %d 尝试操作会员接口", chatID, senderID)
+			// 群组已授权，检查操作者是否具备群管理权限
+			perm := h.checkPermission(c)
+			if !perm.Allowed {
+				log.Printf("[权限拦截] 群组 %d 用户 %d 尝试操作会员接口被拒: %s", chatID, senderID, perm.Reason)
 				if c.Callback() != nil {
 					return c.Respond(&tele.CallbackResponse{
-						Text:      "⚠️ 权限不足: 仅群管理员或群主有权调整群监控设置",
+						Text:      "⚠️ 权限不足: " + perm.Reason,
 						ShowAlert: true,
 					})
 				}
-				return c.Send("⚠️ 权限不足: 仅群管理员或群主有权操作群监控配置。")
+				return c.Send("⚠️ 权限不足: " + perm.Reason + "。")
 			}
 
 			return next(c)
@@ -158,7 +201,8 @@ func (h *Handler) RequireMember(next tele.HandlerFunc) tele.HandlerFunc {
 // RequireControlPermission 路由守卫：用于 /sub 与 /mute（允许正式白名单与游客控制自身会话）
 func (h *Handler) RequireControlPermission(next tele.HandlerFunc) tele.HandlerFunc {
 	return func(c tele.Context) error {
-		if h.hasControlPermission(c) {
+		perm := h.checkControlPermission(c)
+		if perm.Allowed {
 			return next(c)
 		}
 
@@ -166,65 +210,115 @@ func (h *Handler) RequireControlPermission(next tele.HandlerFunc) tele.HandlerFu
 		if c.Sender() != nil {
 			senderID = c.Sender().ID
 		}
-		log.Printf("[权限拦截] 用户 %d 无权调整通知推送开关", senderID)
+		log.Printf("[权限拦截] 用户 %d 无权调整通知推送开关: %s", senderID, perm.Reason)
 		if c.Callback() != nil {
 			return c.Respond(&tele.CallbackResponse{
-				Text:      "⚠️ 权限不足: 仅管理员或群主有权调整开关",
+				Text:      "⚠️ 权限不足: " + perm.Reason,
 				ShowAlert: true,
 			})
 		}
-		return c.Send("⚠️ 权限不足: 仅管理员或群主有权调整通知推送开关。")
+		return c.Send("⚠️ 权限不足: " + perm.Reason + "。")
 	}
 }
 
-// hasPermission 校验当前发送者是否有权修改监控设置 (仅限管理员与正式白名单)
-func (h *Handler) hasPermission(c tele.Context) bool {
-	if c.Sender() == nil {
-		return false
+// PermissionResult 包含权限校验结果与诊断说明
+type PermissionResult struct {
+	Allowed bool
+	Reason  string
+}
+
+// checkPermission 统一校验当前发送者是否有权修改监控设置 (仅限管理员与正式白名单)
+func (h *Handler) checkPermission(c tele.Context) PermissionResult {
+	if c.Chat() == nil {
+		return PermissionResult{Allowed: false, Reason: "会话无效"}
 	}
-	senderID := c.Sender().ID
 	chatID := c.Chat().ID
+	senderID := int64(0)
+	if c.Sender() != nil {
+		senderID = c.Sender().ID
+	}
 
 	// 1. 超级管理员始终拥有最高控制权
 	if h.isAdmin(c) {
-		return true
+		return PermissionResult{Allowed: true}
 	}
 
 	// 2. 私聊场景：白名单用户对其个人专属会话拥有 100% 自主配置权
 	if c.Chat().Type == tele.ChatPrivate {
-		return h.engine.IsAuthorized(chatID)
+		if h.engine.IsAuthorized(chatID) {
+			return PermissionResult{Allowed: true}
+		}
+		return PermissionResult{Allowed: false, Reason: "当前私聊未在授权白名单中"}
 	}
 
-	// 3. 群组场景：必须是已授权群组，且仅允许群管理员或群主进行设置调整
+	// 3. 群组场景：群必须在白名单中
 	if !h.engine.IsAuthorized(chatID) {
-		return false
-	}
-	admins, err := c.Bot().AdminsOf(c.Chat())
-	if err != nil {
-		return false // 无法获取管理员列表时严格拒绝 (Fail-Closed)
-	}
-	for _, admin := range admins {
-		if admin.User != nil && admin.User.ID == senderID {
-			return true
+		return PermissionResult{
+			Allowed: false,
+			Reason:  fmt.Sprintf("当前群组未在授权白名单中 (ID: %d)", chatID),
 		}
 	}
-	return false
+
+	// 4. 群组内匿名管理员检查 (Telegram Anonymous Admin)
+	// 4.1 发送者为群身份本身 (例如开启以群身份/频道身份发言，SenderChat == Chat)
+	if c.Message() != nil && c.Message().SenderChat != nil && c.Message().SenderChat.ID == chatID {
+		return PermissionResult{Allowed: true}
+	}
+	// 4.2 匿名管理员虚拟用户 ID (1087968824 GroupAnonymousBot)
+	if senderID == 1087968824 {
+		return PermissionResult{Allowed: true}
+	}
+
+	// 5. 群组内实名管理员检查：从 Telegram 获取当前群的管理员列表（带 2 分钟本地缓存与网络容灾）
+	isAdmin, err := h.isGroupAdmin(c.Bot(), c.Chat(), senderID)
+	if err != nil {
+		log.Printf("[群管权限检查失败] 获取群组 %d 管理员列表失败: %v", chatID, err)
+		return PermissionResult{
+			Allowed: false,
+			Reason:  "无法获取本群管理员列表，请确认是否已将机器人设为群管理员",
+		}
+	}
+
+	if isAdmin {
+		return PermissionResult{Allowed: true}
+	}
+
+	return PermissionResult{
+		Allowed: false,
+		Reason:  "仅群管理员或群主有权调整群监控设置",
+	}
 }
 
-// hasControlPermission 校验当前发送者是否有权调整基础通知开关与静音 (支持正式白名单与有效游客)
-func (h *Handler) hasControlPermission(c tele.Context) bool {
+// hasPermission 兼容布尔值判定的便捷方法
+func (h *Handler) hasPermission(c tele.Context) bool {
+	return h.checkPermission(c).Allowed
+}
+
+// checkControlPermission 校验当前发送者是否有权调整基础通知开关与静音 (支持正式白名单与有效游客)
+func (h *Handler) checkControlPermission(c tele.Context) PermissionResult {
 	if h.isAdmin(c) {
-		return true
+		return PermissionResult{Allowed: true}
+	}
+	if c.Chat() == nil {
+		return PermissionResult{Allowed: false, Reason: "会话无效"}
 	}
 	chatID := c.Chat().ID
 
 	// 私聊场景：正式白名单会员或游客均对其个人会话拥有启闭通知与静音的权利
 	if c.Chat().Type == tele.ChatPrivate {
-		return h.engine.IsAuthorized(chatID) || h.engine.IsGuest(chatID)
+		if h.engine.IsAuthorized(chatID) || h.engine.IsGuest(chatID) {
+			return PermissionResult{Allowed: true}
+		}
+		return PermissionResult{Allowed: false, Reason: "当前私聊未在授权白名单中"}
 	}
 
 	// 群组场景：必须是已授权会话且操作者为群管（群组不支持游客）
-	return h.hasPermission(c)
+	return h.checkPermission(c)
+}
+
+// hasControlPermission 兼容布尔值判定的便捷方法
+func (h *Handler) hasControlPermission(c tele.Context) bool {
+	return h.checkControlPermission(c).Allowed
 }
 
 func (h *Handler) isAdmin(c tele.Context) bool {
@@ -233,3 +327,52 @@ func (h *Handler) isAdmin(c tele.Context) bool {
 	}
 	return c.Sender().ID == h.adminID
 }
+
+// isGroupAdmin 校验指定用户是否为群管理员（带 2 分钟本地内存缓存与网络容灾降级）
+func (h *Handler) isGroupAdmin(b *tele.Bot, chat *tele.Chat, userID int64) (bool, error) {
+	if b == nil || chat == nil {
+		return false, fmt.Errorf("bot or chat is nil")
+	}
+	chatID := chat.ID
+
+	// 1. 优先读取内存缓存
+	h.adminCacheMu.RLock()
+	entry, exists := h.adminCache[chatID]
+	h.adminCacheMu.RUnlock()
+
+	now := time.Now()
+	if exists && now.Before(entry.expiresAt) {
+		_, ok := entry.adminIDs[userID]
+		return ok, nil
+	}
+
+	// 2. 缓存过期或未命中，调用 Telegram API 获取最新群管列表
+	admins, err := b.AdminsOf(chat)
+	if err != nil {
+		// 容灾策略：若网络请求异常但已有旧缓存，优雅降级复用旧数据
+		if exists {
+			_, ok := entry.adminIDs[userID]
+			return ok, nil
+		}
+		return false, err
+	}
+
+	// 3. 构建最新管理员哈希映射并写入缓存（有效期 2 分钟）
+	newMap := make(map[int64]struct{}, len(admins))
+	for _, admin := range admins {
+		if admin.User != nil {
+			newMap[admin.User.ID] = struct{}{}
+		}
+	}
+
+	h.adminCacheMu.Lock()
+	h.adminCache[chatID] = adminCacheEntry{
+		adminIDs:  newMap,
+		expiresAt: now.Add(2 * time.Minute),
+	}
+	h.adminCacheMu.Unlock()
+
+	_, ok := newMap[userID]
+	return ok, nil
+}
+

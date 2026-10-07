@@ -152,12 +152,21 @@ func RenderSettingsText(cfg filter.ChatConfig) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("⚙️ <b>【Narwhal Cloud 监控与过滤控制台】</b>\n\n")
+	if cfg.ChatID < 0 {
+		groupRemark := ""
+		if cfg.Remark != "" {
+			groupRemark = fmt.Sprintf(" (%s)", html.EscapeString(cfg.Remark))
+		}
+		sb.WriteString(fmt.Sprintf("👥 <b>【群组监控控制台%s】</b>\n\n", groupRemark))
+		sb.WriteString(fmt.Sprintf("• <b>群组 Chat ID:</b> <code>%d</code>\n", cfg.ChatID))
+	} else {
+		sb.WriteString("⚙️ <b>【Narwhal Cloud 监控与过滤控制台】</b>\n\n")
+	}
 	sb.WriteString(fmt.Sprintf("• <b>当前状态:</b> %s\n", status))
 	sb.WriteString(fmt.Sprintf("• <b>地区白名单:</b> <code>%s</code>\n", regDesc))
 	sb.WriteString(fmt.Sprintf("• <b>价格上限:</b> <code>%s</code>\n", priceDesc))
 	sb.WriteString(fmt.Sprintf("• <b>高级自定义规则:</b> %d 条生效中 (/filter list 查看)\n\n", len(cfg.Rules)))
-	sb.WriteString("<i>💡 提示: 按钮即点即生效；点击“🌍 更多冷门地区”可展开全球 30+ 节点定制</i>")
+	sb.WriteString("<i>💡 提示: 按钮即点即生效；面板 1 分钟未操作自动清屏自毁，亦可随时点击【🗑️ 关闭面板】立即清理</i>")
 
 	return sb.String()
 }
@@ -225,7 +234,7 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 	sb.WriteString("━━━━━━━━━━━━━━\n")
 
 	// 1. 触发补货/上新的套餐列表 (全部以 🔥 展示)
-	for i, tp := range trigPlans {
+	for _, tp := range trigPlans {
 		stockStr := "抢购中"
 		if tp.Remaining > 0 {
 			stockStr = fmt.Sprintf("余 %d 台", tp.Remaining)
@@ -238,9 +247,6 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 		sb.WriteString(fmt.Sprintf(" ├ 配置：%d核/%s/%dG/%dMbps\n", tp.CPU, formatRAM(tp.RamMB), tp.DiskGB, tp.BandwidthMbps))
 		sb.WriteString(fmt.Sprintf(" ├ 流量：%s | %s\n", formatTraffic(tp.MonthlyTrafficGB), formatPrice(tp.PriceMonthly)))
 		sb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>\n", html.EscapeString(deployURL)))
-		if i < len(trigPlans)-1 {
-			sb.WriteString("\n")
-		}
 	}
 
 	// 2. 同一宿主机下的其他可选套餐 (可折叠引用)
@@ -277,14 +283,11 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 			otherSb.WriteString(fmt.Sprintf("%s <b>%s</b>  [%s]\n", icon, html.EscapeString(other.Name), otherStock))
 			otherSb.WriteString(fmt.Sprintf(" ├ 配置：%d核/%s/%dG/%dMbps\n", other.CPU, formatRAM(other.RamMB), other.DiskGB, other.BandwidthMbps))
 			otherSb.WriteString(fmt.Sprintf(" ├ 流量：%s | %s\n", formatTraffic(other.MonthlyTrafficGB), formatPrice(other.PriceMonthly)))
-			otherSb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>", html.EscapeString(otherURL)))
-			if i < len(evt.OtherPlans)-1 && i < maxOther-1 {
-				otherSb.WriteString("\n")
-			}
+			otherSb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>\n", html.EscapeString(otherURL)))
 		}
 
 		sb.WriteString("━━━━━━━━━━━━━━\n")
-		sb.WriteString(fmt.Sprintf("<blockquote expandable>%s</blockquote>\n", otherSb.String()))
+		sb.WriteString(fmt.Sprintf("<blockquote expandable>%s</blockquote>\n", strings.TrimRight(otherSb.String(), "\n")))
 	}
 
 	// 3. 机房/套餐简介（自动折叠）

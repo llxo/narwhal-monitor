@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	tele "gopkg.in/telebot.v3"
 
@@ -30,14 +31,33 @@ import (
 // HandleMenu /menu 打开白名单内联控制台菜单
 func (h *Handler) HandleMenu(c tele.Context) error {
 	chatID := c.Chat().ID
-	if c.Chat().Type != tele.ChatPrivate && !h.hasPermission(c) {
-		return c.Send("⚠️ 仅管理员或群主有权调出群组配置面板。")
-	}
-
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderSettingsText(cfg)
 	markup := BuildMenuKeyboard(c.Bot(), cfg)
-	return c.Send(text, markup, tele.ModeHTML)
+	msg, err := c.Bot().Send(c.Chat(), text, markup, tele.ModeHTML)
+	if err != nil {
+		return err
+	}
+
+	// 全局安排 60 秒滑动自毁（原触发指令不清理保持会话记录）
+	h.scheduleAutoDelete(c.Bot(), msg, 60*time.Second)
+	return nil
+}
+
+// HandleBtnCloseMenu 点击【🗑️ 关闭面板】主动销毁控制台
+func (h *Handler) HandleBtnCloseMenu(c tele.Context) error {
+	_ = c.Respond()
+	if c.Message() != nil {
+		h.cancelAutoDelete(c.Message())
+	}
+	return c.Delete()
+}
+
+// refreshMenuAutoDelete 在按钮交互后刷新 60 秒滑动自毁倒计时
+func (h *Handler) refreshMenuAutoDelete(c tele.Context) {
+	if c.Chat() != nil && c.Message() != nil {
+		h.scheduleAutoDelete(c.Bot(), c.Message(), 60*time.Second)
+	}
 }
 
 // HandleFilter /filter 命令路由分发
@@ -57,44 +77,49 @@ func (h *Handler) HandleFilter(c tele.Context) error {
 	case "list":
 		return h.listRules(c, chatID)
 	case "clear":
-		if !h.hasPermission(c) {
-			return c.Send("⚠️ 权限不足: 仅管理员或群主有权清空过滤规则。")
+		perm := h.checkPermission(c)
+		if !perm.Allowed {
+			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
 		}
 		h.engine.ClearRules(chatID)
-		return c.Send("🧹 已清空当前所有高级过滤规则，恢复默认全量推送状态！")
+		return h.replyAutoDelete(c, "🧹 已清空当前所有高级过滤规则，恢复默认全量推送状态！")
 	case "del", "rm", "delete":
-		if !h.hasPermission(c) {
-			return c.Send("⚠️ 权限不足: 仅管理员或群主有权删除过滤规则。")
+		perm := h.checkPermission(c)
+		if !perm.Allowed {
+			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
 		}
 		if len(args) < 3 {
-			return c.Send("❌ 用法错误: 请输入要删除的规则 ID，例如: <code>/filter del r1001</code>", tele.ModeHTML)
+			return h.replyAutoDelete(c, "❌ 用法错误: 请输入要删除的规则 ID，例如: <code>/filter del r1001</code>", tele.ModeHTML)
 		}
 		ruleID := args[2]
 		if h.engine.DeleteRule(chatID, ruleID) {
-			return c.Send(fmt.Sprintf("✅ 规则 <code>%s</code> 已删除并即时失效！", html.EscapeString(ruleID)), tele.ModeHTML)
+			return h.replyAutoDelete(c, fmt.Sprintf("✅ 规则 <code>%s</code> 已删除并即时失效！", html.EscapeString(ruleID)), tele.ModeHTML)
 		}
-		return c.Send(fmt.Sprintf("❌ 未找到 ID 为 <code>%s</code> 的规则，请使用 <code>/filter list</code> 查看有效 ID。", html.EscapeString(ruleID)), tele.ModeHTML)
+		return h.replyAutoDelete(c, fmt.Sprintf("❌ 未找到 ID 为 <code>%s</code> 的规则，请使用 <code>/filter list</code> 查看有效 ID。", html.EscapeString(ruleID)), tele.ModeHTML)
 	case "regex":
-		if !h.hasPermission(c) {
-			return c.Send("⚠️ 权限不足: 仅管理员或群主有权添加正则过滤。")
+		perm := h.checkPermission(c)
+		if !perm.Allowed {
+			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
 		}
 		if len(args) < 3 {
-			return c.Send("❌ 用法错误: <code>/filter regex &lt;表达式&gt;</code>\n例如: <code>/filter regex (?i)cn2|香港|hk</code>", tele.ModeHTML)
+			return h.replyAutoDelete(c, "❌ 用法错误: <code>/filter regex &lt;表达式&gt;</code>\n例如: <code>/filter regex (?i)cn2|香港|hk</code>", tele.ModeHTML)
 		}
 		rawRegex := strings.Join(args[2:], " ")
 		return h.addSimpleRegexRule(c, chatID, rawRegex, false)
 	case "exclude":
-		if !h.hasPermission(c) {
-			return c.Send("⚠️ 权限不足: 仅管理员或群主有权添加排除正则。")
+		perm := h.checkPermission(c)
+		if !perm.Allowed {
+			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
 		}
 		if len(args) < 3 {
-			return c.Send("❌ 用法错误: <code>/filter exclude &lt;表达式&gt;</code>\n例如: <code>/filter exclude nat|ipv6-only</code>", tele.ModeHTML)
+			return h.replyAutoDelete(c, "❌ 用法错误: <code>/filter exclude &lt;表达式&gt;</code>\n例如: <code>/filter exclude nat|ipv6-only</code>", tele.ModeHTML)
 		}
 		rawRegex := strings.Join(args[2:], " ")
 		return h.addSimpleRegexRule(c, chatID, rawRegex, true)
 	case "add":
-		if !h.hasPermission(c) {
-			return c.Send("⚠️ 权限不足: 仅管理员或群主有权添加规则。")
+		perm := h.checkPermission(c)
+		if !perm.Allowed {
+			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
 		}
 		return h.parseAndAddRule(c, chatID, args[2:])
 	default:
@@ -130,13 +155,13 @@ func (h *Handler) sendFilterHelp(c tele.Context) error {
 • <code>/filter add 优化|cmi</code> (直接传入关键词快速过滤)
 
 <i>💡 如需通过可视化按钮点选地区或限价，请输入 <code>/menu</code> 打开控制台。</i>`
-	return c.Send(helpText, tele.ModeHTML)
+	return h.replyAutoDelete(c, helpText, tele.ModeHTML)
 }
 
 func (h *Handler) listRules(c tele.Context, chatID int64) error {
 	cfg := h.engine.GetChatConfig(chatID)
 	if len(cfg.Rules) == 0 {
-		return c.Send("📋 当前没有配置任何高级过滤规则，系统按照基础菜单设置推送。\n输入 <code>/help</code> 可查看如何添加规则。", tele.ModeHTML)
+		return h.replyAutoDelete(c, "📋 当前没有配置任何高级过滤规则，系统按照基础菜单设置推送。\n输入 <code>/help</code> 可查看如何添加规则。", tele.ModeHTML)
 	}
 
 	var sb strings.Builder
@@ -174,14 +199,14 @@ func (h *Handler) listRules(c tele.Context, chatID int64) error {
 		sb.WriteString(fmt.Sprintf("  <i>(删除此规则: /filter del %s)</i>\n\n", r.ID))
 	}
 
-	return c.Send(sb.String(), tele.ModeHTML)
+	return h.replyAutoDelete(c, sb.String(), tele.ModeHTML)
 }
 
 func (h *Handler) addSimpleRegexRule(c tele.Context, chatID int64, rawRegex string, isExclude bool) error {
 	rawRegex = filter.NormalizeRegex(rawRegex)
 	// 先行验证正则合法性
 	if _, err := regexp.Compile(rawRegex); err != nil {
-		return c.Send(fmt.Sprintf("❌ <b>正则表达式语法错误</b>:\n<code>%s</code>", html.EscapeString(err.Error())), tele.ModeHTML)
+		return h.replyAutoDelete(c, fmt.Sprintf("❌ <b>正则表达式语法错误</b>:\n<code>%s</code>", html.EscapeString(err.Error())), tele.ModeHTML)
 	}
 
 	rule := filter.Rule{}
@@ -196,10 +221,10 @@ func (h *Handler) addSimpleRegexRule(c tele.Context, chatID int64, rawRegex stri
 
 	cr, err := h.engine.AddRule(chatID, rule)
 	if err != nil {
-		return c.Send(fmt.Sprintf("❌ 添加失败: %s", html.EscapeString(err.Error())), tele.ModeHTML)
+		return h.replyAutoDelete(c, fmt.Sprintf("❌ 添加失败: %s", html.EscapeString(err.Error())), tele.ModeHTML)
 	}
 
-	return c.Send(fmt.Sprintf("✅ <b>规则添加成功并实时生效！</b>\n\n• 规则 ID: <code>%s</code>\n• 描述: %s\n• 删除请用: <code>/filter del %s</code>", cr.ID, desc, cr.ID), tele.ModeHTML)
+	return h.replyAutoDelete(c, fmt.Sprintf("✅ <b>规则添加成功并实时生效！</b>\n\n• 规则 ID: <code>%s</code>\n• 描述: %s\n• 删除请用: <code>/filter del %s</code>", cr.ID, desc, cr.ID), tele.ModeHTML)
 }
 
 // parseRAM 智能解析内存输入，支持如 64, 64m, 128mb, 512, 1g, 2gb 等规格（转换为 MB）
@@ -350,23 +375,20 @@ func (h *Handler) parseAndAddRule(c tele.Context, chatID int64, tokens []string)
 	if rule.MaxPrice == 0 && rule.MinPrice == 0 && len(rule.Regions) == 0 &&
 		rule.MinCPU == 0 && rule.MaxCPU == 0 && rule.MinRAM == 0 && rule.MaxRAM == 0 &&
 		rule.Regex == "" && rule.ExcludeRegex == "" {
-		return c.Send("❌ <b>未能识别到有效的过滤条件</b>\n\n用法示例：\n• 快速添加正则匹配：<code>/filter regex 64m|128m</code>\n• 复合条件过滤：<code>/filter add price&lt;=0.5 ram&gt;=256m region=HK</code>", tele.ModeHTML)
+		return h.replyAutoDelete(c, "❌ <b>未能识别到有效的过滤条件</b>\n\n用法示例：\n• 快速添加正则匹配：<code>/filter regex 64m|128m</code>\n• 复合条件过滤：<code>/filter add price&lt;=0.5 ram&gt;=256m region=HK</code>", tele.ModeHTML)
 	}
 
 	cr, err := h.engine.AddRule(chatID, rule)
 	if err != nil {
-		return c.Send(fmt.Sprintf("❌ 添加规则失败: %s", html.EscapeString(err.Error())), tele.ModeHTML)
+		return h.replyAutoDelete(c, fmt.Sprintf("❌ 添加规则失败: %s", html.EscapeString(err.Error())), tele.ModeHTML)
 	}
 
-	return c.Send(fmt.Sprintf("✅ <b>复合过滤规则添加成功并实时生效！</b>\n\n• 规则 ID: <code>%s</code>\n• 可通过 <code>/filter list</code> 查看，或 <code>/filter del %s</code> 删除", cr.ID, cr.ID), tele.ModeHTML)
+	return h.replyAutoDelete(c, fmt.Sprintf("✅ <b>复合过滤规则添加成功并实时生效！</b>\n\n• 规则 ID: <code>%s</code>\n• 可通过 <code>/filter list</code> 查看，或 <code>/filter del %s</code> 删除", cr.ID, cr.ID), tele.ModeHTML)
 }
 
 // ---- 白名单内联按钮交互回调 ----
 
 func (h *Handler) HandleBtnRegion(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权调整群监控设置", ShowAlert: true})
-	}
 	_ = c.Respond()
 	region := c.Data()
 	chatID := c.Chat().ID
@@ -375,6 +397,7 @@ func (h *Handler) HandleBtnRegion(c tele.Context) error {
 		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 至少需保留一个有效地区；若需暂停请点击下方暂停按钮", ShowAlert: true})
 	}
 
+	h.refreshMenuAutoDelete(c)
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderSettingsText(cfg)
 	markup := BuildMenuKeyboard(c.Bot(), cfg)
@@ -382,15 +405,13 @@ func (h *Handler) HandleBtnRegion(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnPrice(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权调整群监控设置", ShowAlert: true})
-	}
 	_ = c.Respond()
 	priceStr := c.Data()
 	chatID := c.Chat().ID
 	price, _ := strconv.ParseFloat(priceStr, 64)
 	h.engine.SetQuickMaxPrice(chatID, price)
 
+	h.refreshMenuAutoDelete(c)
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderSettingsText(cfg)
 	markup := BuildMenuKeyboard(c.Bot(), cfg)
@@ -398,14 +419,12 @@ func (h *Handler) HandleBtnPrice(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnSubToggle(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权调整群监控设置", ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	cfg := h.engine.GetChatConfig(chatID)
 	h.engine.SetSubscribed(chatID, !cfg.Subscribed)
 
+	h.refreshMenuAutoDelete(c)
 	newCfg := h.engine.GetChatConfig(chatID)
 	text := RenderSettingsText(newCfg)
 	markup := BuildMenuKeyboard(c.Bot(), newCfg)
@@ -413,11 +432,9 @@ func (h *Handler) HandleBtnSubToggle(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRefresh(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权刷新设置面板", ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
+	h.refreshMenuAutoDelete(c)
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderSettingsText(cfg)
 	markup := BuildMenuKeyboard(c.Bot(), cfg)
@@ -425,11 +442,9 @@ func (h *Handler) HandleBtnRefresh(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRareMenu(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权调整群监控设置", ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
+	h.refreshMenuAutoDelete(c)
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderRareRegionsText(cfg)
 	markup := BuildRareRegionsKeyboard(c.Bot(), cfg)
@@ -437,9 +452,6 @@ func (h *Handler) HandleBtnRareMenu(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRareToggle(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权调整群监控设置", ShowAlert: true})
-	}
 	_ = c.Respond()
 	reg := strings.ToUpper(strings.TrimSpace(c.Data()))
 	chatID := c.Chat().ID
@@ -448,6 +460,7 @@ func (h *Handler) HandleBtnRareToggle(c tele.Context) error {
 		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 至少需保留一个有效地区；若需暂停请点击下方暂停按钮", ShowAlert: true})
 	}
 
+	h.refreshMenuAutoDelete(c)
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderRareRegionsText(cfg)
 	markup := BuildRareRegionsKeyboard(c.Bot(), cfg)
@@ -455,14 +468,12 @@ func (h *Handler) HandleBtnRareToggle(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRareAll(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权调整群监控设置", ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	// 仅开启全部冷门地区，严格保留一级核心区的现状
 	h.engine.EnableRareRegions(chatID, RareRegions, AllSupportedRegions())
 
+	h.refreshMenuAutoDelete(c)
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderRareRegionsText(cfg)
 	markup := BuildRareRegionsKeyboard(c.Bot(), cfg)
@@ -470,14 +481,12 @@ func (h *Handler) HandleBtnRareAll(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnRareClear(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权调整群监控设置", ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
 	// 仅清空全部冷门地区，严格保留一级核心区的现状
 	h.engine.DisableRareRegions(chatID, RareRegions, SupportedQuickRegions)
 
+	h.refreshMenuAutoDelete(c)
 	newCfg := h.engine.GetChatConfig(chatID)
 	text := RenderRareRegionsText(newCfg)
 	markup := BuildRareRegionsKeyboard(c.Bot(), newCfg)
@@ -485,11 +494,9 @@ func (h *Handler) HandleBtnRareClear(c tele.Context) error {
 }
 
 func (h *Handler) HandleBtnMenuHome(c tele.Context) error {
-	if !h.hasPermission(c) {
-		return c.Respond(&tele.CallbackResponse{Text: "⚠️ 权限不足: 仅管理员或群主有权操作", ShowAlert: true})
-	}
 	_ = c.Respond()
 	chatID := c.Chat().ID
+	h.refreshMenuAutoDelete(c)
 	cfg := h.engine.GetChatConfig(chatID)
 	text := RenderSettingsText(cfg)
 	markup := BuildMenuKeyboard(c.Bot(), cfg)

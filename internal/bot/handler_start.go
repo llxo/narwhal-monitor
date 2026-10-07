@@ -26,7 +26,7 @@ func (h *Handler) HandleStart(c tele.Context) error {
 	}
 
 	if c.Chat().Type != tele.ChatPrivate && !h.hasPermission(c) {
-		return c.Send("⚠️ 仅管理员或群主有权在群组内执行 /start 初始化设置。")
+		return h.replyAutoDelete(c, "⚠️ 仅管理员或群主有权在群组内执行 /start 初始化设置。")
 	}
 
 	// 确保当前会话已激活并加入推送列表（仅对已授权会话生效）
@@ -70,7 +70,7 @@ func (h *Handler) HandleStart(c tele.Context) error {
 			"• 发送 <code>/mute 1h</code> - 开启临时免打扰 (支持 30m, 2h 等)\n" +
 			"• 发送 <code>/help</code> - 查看完整规则编写指南与实战语法示例\n\n" +
 			"<i>💡 您的监控规则专属独立隔离，有符合偏好的新补货将在此第一时间推送！</i>"
-		return c.Send(text, tele.ModeHTML)
+		return h.replyAutoDelete(c, text, tele.ModeHTML)
 	}
 
 	// 3. 👤 游客体验用户 (Guest，仅限私聊)
@@ -84,14 +84,14 @@ func (h *Handler) HandleStart(c tele.Context) error {
 		text := "👋 <b>【Narwhal Cloud 游客监控体验】</b>\n\n" +
 			"• <b>身份权限:</b> 👤 游客体验模式\n" +
 			fmt.Sprintf("• <b>会话 Chat ID:</b> <code>%d</code>\n", chatID) +
-			fmt.Sprintf("• <b>推送状态:</b> %s\n", statusStr) +
+			fmt.Sprintf("• <b>推送状态:</b> %s\n\n", statusStr) +
 			"• <b>推送通道:</b> 🟢 默认接收平台<b>全部未过滤</b>的补货与上新广播\n\n" +
 			"<b>🛠️ 可用指令速查:</b>\n" +
 			"• 发送 <code>/sub</code> - 一键切换通知推送 (开启/暂停)\n" +
 			"• 发送 <code>/mute 1h</code> - 开启临时免打扰\n" +
 			"• 发送 <code>/guest leave</code> - 注销并退出游客名单\n\n" +
 			"<i>💡 提示: 自选地区、最高限价与高级正则过滤仅对【正式白名单会员】开放。如需专属定制规则，请将上方 Chat ID 发送给管理员申请升级！</i>"
-		return c.Send(text, tele.ModeHTML)
+		return h.replyAutoDelete(c, text, tele.ModeHTML)
 	}
 
 	// 4. ⚪ 访客 / 未授权新用户
@@ -118,7 +118,7 @@ func (h *Handler) HandleStart(c tele.Context) error {
 		"• 享最高优先级抢占推送通道\n\n" +
 		"<i>💡 如需开通正式白名单，请将上方 Chat ID 发送给管理员。</i>"
 
-	return c.Send(text, tele.ModeHTML)
+	return h.replyAutoDelete(c, text, tele.ModeHTML)
 }
 
 // HandleHelp /help 使用帮助
@@ -160,9 +160,10 @@ func (h *Handler) HandleHelp(c tele.Context) error {
 			"• <code>/user list</code> - 查看完整白名单列表与规则状态\n" +
 			"• <code>/guest limit &lt;数量&gt;</code> - 设置游客名额限制数 (0为不限)\n" +
 			"• <code>/broadcast &lt;内容&gt;</code> - 向全员群发系统维护广播")
+		return c.Send(sb.String(), tele.ModeHTML)
 	}
 
-	return c.Send(sb.String(), tele.ModeHTML)
+	return h.replyAutoDelete(c, sb.String(), tele.ModeHTML)
 }
 
 // HandleID 查看当前 Chat ID
@@ -181,7 +182,7 @@ func (h *Handler) HandleID(c tele.Context) error {
 		"💡 <i>提示: 若需开通专属白名单，可将此 ID 发送给管理员使用 <code>/user add %d</code> 授权。</i>",
 		chatType, chatID, chatID)
 
-	return c.Send(reply, tele.ModeHTML)
+	return h.replyAutoDelete(c, reply, tele.ModeHTML)
 }
 
 // HandleSub /sub 命令切换全局推送开关 (无参数时自动 Toggle 开启/暂停)
@@ -201,7 +202,7 @@ func (h *Handler) HandleSub(c tele.Context) error {
 		} else if action == "off" || action == "false" || action == "disable" || action == "0" {
 			newSub = false
 		} else {
-			return c.Send("💡 <b>用法提示:</b>\n• 直接发送 <code>/sub</code> 即可快速切换开启/暂停\n• 亦可指定状态: <code>/sub on</code> | <code>/sub off</code>", tele.ModeHTML)
+			return h.replyAutoDelete(c, "💡 <b>用法提示:</b>\n• 直接发送 <code>/sub</code> 即可快速切换开启/暂停\n• 亦可指定状态: <code>/sub on</code> | <code>/sub off</code>", tele.ModeHTML)
 		}
 	}
 
@@ -209,11 +210,11 @@ func (h *Handler) HandleSub(c tele.Context) error {
 
 	if newSub {
 		log.Printf("[订阅切换] 会话 %d 开启推送通知", chatID)
-		return c.Send("🔔 <b>通知推送已开启！</b>\n有满足条件的新补货将第一时间推送给您。\n<i>(再次发送 <code>/sub</code> 可随时暂停推送)</i>", tele.ModeHTML)
+		return h.replyAutoDelete(c, "🔔 <b>通知推送已开启！</b>\n有满足条件的新补货将第一时间推送给您。\n<i>(再次发送 <code>/sub</code> 可随时暂停推送)</i>", tele.ModeHTML)
 	}
 
 	log.Printf("[订阅切换] 会话 %d 暂停推送通知", chatID)
-	return c.Send("🔕 <b>通知推送已暂停！</b>\n已暂时停止向该会话发送补货通知。\n<i>(再次发送 <code>/sub</code> 即可立即恢复接收)</i>", tele.ModeHTML)
+	return h.replyAutoDelete(c, "🔕 <b>通知推送已暂停！</b>\n已暂时停止向该会话发送补货通知。\n<i>(再次发送 <code>/sub</code> 即可立即恢复接收)</i>", tele.ModeHTML)
 }
 
 // HandleMute /mute 临时免打扰
@@ -222,20 +223,20 @@ func (h *Handler) HandleMute(c tele.Context) error {
 	chatID := c.Chat().ID
 
 	if len(args) <= 1 {
-		return c.Send("用法: <code>/mute 1h</code> (免打扰1小时)，或 <code>/mute 0</code> (解除静音)", tele.ModeHTML)
+		return h.replyAutoDelete(c, "用法: <code>/mute 1h</code> (免打扰1小时)，或 <code>/mute 0</code> (解除静音)", tele.ModeHTML)
 	}
 
 	durationStr := args[1]
 	if durationStr == "0" || durationStr == "off" {
 		h.engine.SetMute(chatID, 0)
-		return c.Send("🔔 已解除静音，恢复正常接收通知！")
+		return h.replyAutoDelete(c, "🔔 已解除静音，恢复正常接收通知！")
 	}
 
 	d, err := time.ParseDuration(durationStr)
 	if err != nil {
-		return c.Send("❌ 时长格式不合法，支持如: <code>30m</code>, <code>1h</code>, <code>2h</code>, <code>24h</code>", tele.ModeHTML)
+		return h.replyAutoDelete(c, "❌ 时长格式不合法，支持如: <code>30m</code>, <code>1h</code>, <code>2h</code>, <code>24h</code>", tele.ModeHTML)
 	}
 
 	until := h.engine.SetMute(chatID, d)
-	return c.Send(fmt.Sprintf("🔕 已开启临时免打扰，直到 <b>%s</b> 为止（持续 %v）。", until.Format("2006-01-02 15:04:05"), d), tele.ModeHTML)
+	return h.replyAutoDelete(c, fmt.Sprintf("🔕 已开启临时免打扰，直到 <b>%s</b> 为止（持续 %v）。", until.Format("2006-01-02 15:04:05"), d), tele.ModeHTML)
 }
