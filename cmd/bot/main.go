@@ -109,7 +109,13 @@ func main() {
 		log.Println("[鉴权提示] 未配置 API_KEY，当前以公开访客身份访问（建议在 .env 中设置 API_KEY）")
 	}
 
-	// 5. 初始化 Telegram Bot 实例
+	// 5. 初始化 Telegram Bot 实例与卡片生命周期追踪器
+	stat, err := store.LoadState()
+	if err != nil {
+		log.Printf("[存储提示] 初始化监控状态快照: %v", err)
+	}
+	cardTracker := bot.NewCardTracker(stat.TrackedCards)
+
 	tgBot, err := bot.NewBot(bot.Config{
 		Token:   cfg.Telegram.BotToken,
 		AdminID: cfg.Telegram.AdminID,
@@ -117,6 +123,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("[致命错误] 初始化 Telegram Bot 失败: %v", err)
 	}
+	tgBot.SetTracker(cardTracker)
 
 	// 6. 初始化监控差分轮询器
 	poller, err := monitor.NewPoller(
@@ -130,6 +137,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("[致命错误] 初始化监控轮询器失败: %v", err)
 	}
+	poller.SetCardProvider(cardTracker)
 
 	// 7. 发送上线就绪通知给超级管理员
 	if cfg.Telegram.StartupNotify && cfg.Telegram.AdminID != 0 {

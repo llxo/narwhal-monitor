@@ -6,13 +6,26 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"narwhal-monitor/internal/filter"
 )
 
+// TrackedMachineMsg 记录某台宿主机在各个 Chat 发送的最新消息卡片，用于原地编辑
+type TrackedMachineMsg struct {
+	MachineKey string         `json:"machine_key"`  // 机器唯一标识 (MachineID 或 MachineName)
+	SentAt     time.Time      `json:"sent_at"`      // 首次推送或最近一次发新通知时间
+	LastEditAt time.Time      `json:"last_edit_at"` // 上次编辑时间 (防抖)
+	MsgIDs     map[int64]int  `json:"msg_ids"`      // chatID -> messageID
+	PlanStocks map[string]int `json:"plan_stocks"`  // planID -> 该卡片当时记录的库存数量
+	IsSoldOut  bool           `json:"is_sold_out"`  // 该机器所有套餐是否均已售罄
+}
+
 // MonitorState 用于保存上一轮监控快照，防止重启重复刷屏
 type MonitorState struct {
-	PlanStocks map[string]int `json:"plan_stocks"` // 套餐 ID -> 上次记录的库存数量
+	PlanStocks   map[string]int                `json:"plan_stocks"`    // 套餐 ID -> 当前库存数量
+	KnownPlanIDs map[string]bool               `json:"known_plan_ids"` // 历史上见过的所有套餐 ID 集合 (防下架重上架误报全新)
+	TrackedCards map[string]*TrackedMachineMsg `json:"tracked_cards"`  // machineKey -> 最新卡片追踪信息
 }
 
 // SystemSettings 保存全局系统运行参数（如游客模式开关与名额限制）
@@ -111,6 +124,16 @@ func (s *Store) LoadState() (*MonitorState, error) {
 	}
 	if state.PlanStocks == nil {
 		state.PlanStocks = make(map[string]int)
+	}
+	if state.KnownPlanIDs == nil {
+		state.KnownPlanIDs = make(map[string]bool)
+	}
+	// 将历史 PlanStocks 自动灌入 KnownPlanIDs，确保平滑兼容
+	for id := range state.PlanStocks {
+		state.KnownPlanIDs[id] = true
+	}
+	if state.TrackedCards == nil {
+		state.TrackedCards = make(map[string]*TrackedMachineMsg)
 	}
 	return &state, nil
 }
