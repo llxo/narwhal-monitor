@@ -234,7 +234,7 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 	sb.WriteString("━━━━━━━━━━━━━━\n")
 
 	// 1. 触发补货/上新的套餐列表 (全部以 🔥 展示)
-	for i, tp := range trigPlans {
+	for _, tp := range trigPlans {
 		stockStr := "抢购中"
 		if tp.Remaining > 0 {
 			stockStr = fmt.Sprintf("余 %d 台", tp.Remaining)
@@ -247,9 +247,6 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 		sb.WriteString(fmt.Sprintf(" ├ 配置：%d核/%s/%dG/%dMbps\n", tp.CPU, formatRAM(tp.RamMB), tp.DiskGB, tp.BandwidthMbps))
 		sb.WriteString(fmt.Sprintf(" ├ 流量：%s | %s\n", formatTraffic(tp.MonthlyTrafficGB), formatPrice(tp.PriceMonthly)))
 		sb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>\n", html.EscapeString(deployURL)))
-		if i < len(trigPlans)-1 {
-			sb.WriteString("\n")
-		}
 	}
 
 	// 2. 同一宿主机下的其他可选套餐 (可折叠引用)
@@ -286,14 +283,11 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 			otherSb.WriteString(fmt.Sprintf("%s <b>%s</b>  [%s]\n", icon, html.EscapeString(other.Name), otherStock))
 			otherSb.WriteString(fmt.Sprintf(" ├ 配置：%d核/%s/%dG/%dMbps\n", other.CPU, formatRAM(other.RamMB), other.DiskGB, other.BandwidthMbps))
 			otherSb.WriteString(fmt.Sprintf(" ├ 流量：%s | %s\n", formatTraffic(other.MonthlyTrafficGB), formatPrice(other.PriceMonthly)))
-			otherSb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>", html.EscapeString(otherURL)))
-			if i < len(evt.OtherPlans)-1 && i < maxOther-1 {
-				otherSb.WriteString("\n")
-			}
+			otherSb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>\n", html.EscapeString(otherURL)))
 		}
 
 		sb.WriteString("━━━━━━━━━━━━━━\n")
-		sb.WriteString(fmt.Sprintf("<blockquote expandable>%s</blockquote>\n", otherSb.String()))
+		sb.WriteString(fmt.Sprintf("<blockquote expandable>%s</blockquote>\n", strings.TrimRight(otherSb.String(), "\n")))
 	}
 
 	// 3. 机房/套餐简介（自动折叠）
