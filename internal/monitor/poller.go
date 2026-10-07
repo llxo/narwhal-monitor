@@ -13,16 +13,29 @@ import (
 	"narwhal-monitor/internal/storage"
 )
 
+// CardTrackerProvider 接口供持久化时同步卡片追踪信息
+type CardTrackerProvider interface {
+	GetCards() map[string]*storage.TrackedMachineMsg
+}
+
 // Poller 定时拉取并计算差分事件，内置限流保护
 type Poller struct {
 	client       *api.Client
 	store        *storage.Store
 	state        *storage.MonitorState
+	cardProvider CardTrackerProvider
 	mu           sync.Mutex
 	interval     time.Duration
 	eventHandler func(event Event)
 	isReady      bool
 	backoffUntil time.Time // 限速退避截止时间
+}
+
+// SetCardProvider 设置卡片消息追踪提供器
+func (p *Poller) SetCardProvider(provider CardTrackerProvider) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cardProvider = provider
 }
 
 // NewPoller 创建监控轮询器
@@ -36,8 +49,19 @@ func NewPoller(client *api.Client, store *storage.Store, interval time.Duration,
 	if err != nil {
 		log.Printf("[警告] 加载上次监控状态失败，将初始化新状态: %v", err)
 		state = &storage.MonitorState{
-			PlanStocks: make(map[string]int),
+			PlanStocks:   make(map[string]int),
+			KnownPlanIDs: make(map[string]bool),
+			TrackedCards: make(map[string]*storage.TrackedMachineMsg),
 		}
+	}
+	if state.PlanStocks == nil {
+		state.PlanStocks = make(map[string]int)
+	}
+	if state.KnownPlanIDs == nil {
+		state.KnownPlanIDs = make(map[string]bool)
+	}
+	if state.TrackedCards == nil {
+		state.TrackedCards = make(map[string]*storage.TrackedMachineMsg)
 	}
 
 	return &Poller{
@@ -101,6 +125,10 @@ func (p *Poller) poll(ctx context.Context) {
 		log.Println("[监控] 初始数据快照建立完成，开始监听新事件推送...")
 	}
 
+	if p.cardProvider != nil {
+		p.state.TrackedCards = p.cardProvider.GetCards()
+	}
+
 	// 异步持久化当前状态快照
 	if err := p.store.SaveState(p.state); err != nil {
 		log.Printf("[监控警告] 保存状态失败: %v", err)
@@ -111,12 +139,11 @@ type triggeredPlanInfo struct {
 	plan      api.PublicPlan
 	isNew     bool
 	isRestock bool
+	isReduced bool
 	stock     int
 }
 
 func (p *Poller) diffPlans(plans []api.PublicPlan) {
-	currentStockMap := make(map[string]int, len(plans))
-
 	// 按机器归类所有公开套餐，供卡片展示同机器其他可选套餐
 	machinePlansMap := make(map[string][]api.PublicPlan, len(plans))
 	for _, plan := range plans {
@@ -125,6 +152,21 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 			mKey = plan.MachineName
 		}
 		machinePlansMap[mKey] = append(machinePlansMap[mKey], plan)
+	}
+
+	// 如果处于冷启动（首次加载且未记录过历史），只建立索引不触发通知
+	if !p.isReady && len(p.state.KnownPlanIDs) == 0 && len(p.state.PlanStocks) == 0 {
+		for _, plan := range plans {
+			currentStock := plan.Remaining
+			if plan.SoldOut || plan.RamInsufficient {
+				currentStock = 0
+			} else if currentStock == 0 && !plan.SoldOut {
+				currentStock = -1
+			}
+			p.state.PlanStocks[plan.ID] = currentStock
+			p.state.KnownPlanIDs[plan.ID] = true
+		}
+		return
 	}
 
 	triggeredByMachine := make(map[string][]triggeredPlanInfo)
@@ -138,28 +180,42 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 			// 0 且 sold_out 为 false 代表不限数量
 			currentStock = -1
 		}
-		currentStockMap[plan.ID] = currentStock
 
-		// 如果处于冷启动（首次加载且未记录过历史），只建立索引不触发通知
-		if !p.isReady && len(p.state.PlanStocks) == 0 {
-			continue
-		}
+		oldStock, existedInStocks := p.state.PlanStocks[plan.ID]
+		isKnown := p.state.KnownPlanIDs[plan.ID]
 
-		oldStock, existed := p.state.PlanStocks[plan.ID]
-		isStockRestored := false
 		isNewPlan := false
+		isRestock := false
+		isReduced := false
 
-		if !existed {
-			// 新上架套餐，且有货
+		if !isKnown {
+			// 历史从未出现过的全新套餐首发
 			if currentStock != 0 {
 				isNewPlan = true
 			}
-		} else if oldStock == 0 && currentStock != 0 {
-			// 之前缺货/售罄，现在恢复有库存 (补货)
-			isStockRestored = true
+		} else {
+			// 历史上见过的老套餐
+			if !existedInStocks {
+				// 之前下架或母机掉线过，现重新出现且有库存，按补货处理
+				if currentStock != 0 {
+					isRestock = true
+				}
+			} else {
+				// 历史在库，计算差分
+				if oldStock == 0 && currentStock != 0 {
+					// 之前缺货售罄，现在恢复有库存 (补货)
+					isRestock = true
+				} else if oldStock > 0 && currentStock > oldStock {
+					// 库存数量增加 (补货)
+					isRestock = true
+				} else if oldStock > 0 && (currentStock < oldStock || currentStock == 0) {
+					// 库存数量减少或变为售罄 (扣减/售罄，供卡片原地编辑)
+					isReduced = true
+				}
+			}
 		}
 
-		if isNewPlan || isStockRestored {
+		if isNewPlan || isRestock || isReduced {
 			mKey := plan.MachineID
 			if mKey == "" {
 				mKey = plan.MachineName
@@ -170,7 +226,8 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 			triggeredByMachine[mKey] = append(triggeredByMachine[mKey], triggeredPlanInfo{
 				plan:      plan,
 				isNew:     isNewPlan,
-				isRestock: isStockRestored,
+				isRestock: isRestock,
+				isReduced: isReduced,
 				stock:     currentStock,
 			})
 		}
@@ -186,28 +243,43 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 		var trigPlans []api.PublicPlan
 		var trigIDs []string
 		var trigNames []string
-		isAllNew := true
-		minPrice := items[0].plan.PriceMonthly
+		hasNew := false
 		hasRestock := false
+		hasReduced := false
+		minPrice := items[0].plan.PriceMonthly
 
 		for _, item := range items {
 			trigPlans = append(trigPlans, item.plan)
 			trigIDs = append(trigIDs, item.plan.ID)
 			trigNames = append(trigNames, item.plan.Name)
-			if !item.isNew {
-				isAllNew = false
+			if item.isNew {
+				hasNew = true
 			}
 			if item.isRestock {
 				hasRestock = true
+			}
+			if item.isReduced {
+				hasReduced = true
 			}
 			if item.plan.PriceMonthly < minPrice {
 				minPrice = item.plan.PriceMonthly
 			}
 		}
 
-		evtType := EventPlanRestock
-		if isAllNew {
+		var evtType EventType
+		var isEditOnly bool
+
+		if hasNew {
 			evtType = EventPlanNew
+			isEditOnly = false
+		} else if hasRestock {
+			evtType = EventPlanRestock
+			isEditOnly = false
+		} else if hasReduced {
+			evtType = EventPlanUpdate
+			isEditOnly = true
+		} else {
+			continue
 		}
 
 		// 收集该机器下未触发的其他套餐
@@ -255,14 +327,26 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 		p.emitEvent(Event{
 			Type:           evtType,
 			Payload:        payload,
+			MachineKey:     mKey,
 			Plan:           &firstPlan,
 			TriggeredPlans: trigPlans,
 			OtherPlans:     otherPlans,
+			IsEditOnly:     isEditOnly,
 			Timestamp:      time.Now(),
 		})
 	}
 
-	p.state.PlanStocks = currentStockMap
+	// 增量更新历史快照（绝不直接覆盖丢弃未返回套餐，彻底杜绝下架又上架导致的失忆与误报）
+	for _, plan := range plans {
+		currentStock := plan.Remaining
+		if plan.SoldOut || plan.RamInsufficient {
+			currentStock = 0
+		} else if currentStock == 0 && !plan.SoldOut {
+			currentStock = -1
+		}
+		p.state.PlanStocks[plan.ID] = currentStock
+		p.state.KnownPlanIDs[plan.ID] = true
+	}
 }
 
 func (p *Poller) emitEvent(evt Event) {
