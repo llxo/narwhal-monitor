@@ -82,6 +82,18 @@ type Rule struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// HasPositiveConditions 判断规则是否包含正向筛选条件（若无，则仅作为纯反向排除/黑名单使用）
+func (r *Rule) HasPositiveConditions() bool {
+	return r.MaxPrice > 0 || r.MinPrice > 0 || len(r.Regions) > 0 ||
+		r.MinCPU > 0 || r.MaxCPU > 0 || r.MinRAM > 0 || r.MaxRAM > 0 ||
+		strings.TrimSpace(r.Regex) != ""
+}
+
+// IsPureExclude 判断是否为纯反向排除规则（无正向条件，仅有排除正则）
+func (r *Rule) IsPureExclude() bool {
+	return !r.HasPositiveConditions() && strings.TrimSpace(r.ExcludeRegex) != ""
+}
+
 // CompiledRule 是 Rule 的内存已编译版本，复用 pre-compiled 正则以实现超低占用与极速匹配
 type CompiledRule struct {
 	Rule

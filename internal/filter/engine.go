@@ -870,8 +870,29 @@ func (e *Engine) Evaluate(chatID int64, p *ItemPayload) bool {
 		return true
 	}
 
-	// 若配置了自定义高级规则，至少需命中其中一条规则才进行推送 (OR 关系)
+	searchStr := p.BuildSearchString()
+
+	// 4.1 全局反向排除检查（一票否决权）：
+	// 遍历所有纯反向排除规则（IsPureExclude），只要命中任意一条排除正则，立即丢弃！
+	var positiveRules []*CompiledRule
 	for _, rule := range cfg.compiledRules {
+		if rule.IsPureExclude() {
+			if rule.CompiledExcludeRegex != nil && rule.CompiledExcludeRegex.MatchString(searchStr) {
+				return false
+			}
+		} else {
+			positiveRules = append(positiveRules, rule)
+		}
+	}
+
+	// 4.2 若没有配置任何正向高级规则（用户仅设置了反向排除规则），
+	// 既然已经通过基础过滤且未被任何排除规则拦截，则予以推送！
+	if len(positiveRules) == 0 {
+		return true
+	}
+
+	// 4.3 若配置了正向高级规则，至少需命中其中一条规则才进行推送 (OR 关系)
+	for _, rule := range positiveRules {
 		if rule.Match(p) {
 			return true
 		}
