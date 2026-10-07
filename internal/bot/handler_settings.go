@@ -63,7 +63,7 @@ func (h *Handler) refreshMenuAutoDelete(c tele.Context) {
 // HandleFilter /filter 命令路由分发
 func (h *Handler) HandleFilter(c tele.Context) error {
 	chatID := c.Chat().ID
-	args := strings.Fields(c.Text())
+	args := getCommandArgs(c)
 
 	// 无参数时输出 /filter 独立命令说明
 	if len(args) <= 1 {

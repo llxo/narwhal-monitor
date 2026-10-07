@@ -107,6 +107,59 @@ func (h *Handler) replyAutoDelete(c tele.Context, text string, opt ...interface{
 	return nil
 }
 
+// getCommandArgs 解析并清洗命令参数，自动兼容并剔除可能附带在命令名或参数末尾的 @BotUsername
+func getCommandArgs(c tele.Context) []string {
+	if c == nil {
+		return nil
+	}
+	text := strings.TrimSpace(c.Text())
+	if text == "" {
+		return nil
+	}
+	rawFields := strings.Fields(text)
+	if len(rawFields) == 0 {
+		return nil
+	}
+
+	myUsername := ""
+	if c.Bot() != nil && c.Bot().Me != nil {
+		myUsername = strings.ToLower(c.Bot().Me.Username)
+	}
+
+	result := make([]string, 0, len(rawFields))
+	for i, field := range rawFields {
+		// 第一个字段是指令本身 (如 /filter 或 /filter@bot)
+		if i == 0 {
+			if atIdx := strings.Index(field, "@"); atIdx != -1 {
+				field = field[:atIdx]
+			}
+			result = append(result, field)
+			continue
+		}
+
+		// 后续字段为参数
+		if myUsername != "" {
+			lowerField := strings.ToLower(field)
+			// 1. 完全匹配 @bot，直接丢弃该 token
+			if lowerField == "@"+myUsername {
+				continue
+			}
+			// 2. 字段末尾带有 @bot (如 龟|甲骨文@narwhal_monitor_bot)
+			atSuffix := "@" + myUsername
+			if strings.HasSuffix(lowerField, atSuffix) {
+				field = field[:len(field)-len(atSuffix)]
+				if field == "" {
+					continue
+				}
+			}
+		}
+
+		result = append(result, field)
+	}
+
+	return result
+}
+
 // RegisterRoutes 统一挂载全局门禁中间件与声明式路由分组
 func (h *Handler) RegisterRoutes(b *tele.Bot) {
 	// 1. 全局交互审计与消息防护中间件

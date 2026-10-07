@@ -187,7 +187,7 @@ func (h *Handler) HandleID(c tele.Context) error {
 
 // HandleSub /sub 命令切换全局推送开关 (无参数时自动 Toggle 开启/暂停)
 func (h *Handler) HandleSub(c tele.Context) error {
-	args := strings.Fields(c.Text())
+	args := getCommandArgs(c)
 	chatID := c.Chat().ID
 	cfg := h.engine.GetChatConfig(chatID)
 
@@ -219,7 +219,7 @@ func (h *Handler) HandleSub(c tele.Context) error {
 
 // HandleMute /mute 临时免打扰
 func (h *Handler) HandleMute(c tele.Context) error {
-	args := strings.Fields(c.Text())
+	args := getCommandArgs(c)
 	chatID := c.Chat().ID
 
 	if len(args) <= 1 {
