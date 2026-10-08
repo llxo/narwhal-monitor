@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"flag"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,7 +34,30 @@ func main() {
 		log.Fatalf("[致命错误] 加载配置失败: %v", err)
 	}
 
-	// 2. 初始化持久化存储
+	// 2. 初始化持久化存储与日志双写落盘
+	if err := os.MkdirAll(cfg.Storage.DataDir, 0755); err != nil {
+		log.Fatalf("[致命错误] 创建数据目录失败: %v", err)
+	}
+
+	logFilePath := filepath.Join(cfg.Storage.DataDir, "app.log")
+	if customLog := strings.TrimSpace(os.Getenv("LOG_FILE")); customLog != "" {
+		logFilePath = customLog
+	}
+
+	// 单文件超过 20MB 时自动轮转备份
+	if fi, err := os.Stat(logFilePath); err == nil && fi.Size() > 20*1024*1024 {
+		_ = os.Rename(logFilePath, logFilePath+".old")
+	}
+
+	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("[日志提示] 无法打开日志文件 %s: %v，保持控制台输出", logFilePath, err)
+	} else {
+		defer logFile.Close()
+		log.SetOutput(io.MultiWriter(os.Stdout, logFile))
+		log.Printf("[日志系统] 已启用双写输出，落盘日志路径: %s", logFilePath)
+	}
+
 	store, err := storage.NewStore(cfg.Storage.DataDir)
 	if err != nil {
 		log.Fatalf("[致命错误] 初始化存储模块失败: %v", err)
