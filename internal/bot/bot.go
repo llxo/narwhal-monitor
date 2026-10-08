@@ -87,7 +87,7 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 		log.Println("[Bot] 官方全员默认命令菜单已成功向 Telegram 注册！")
 	}
 
-	// 2. 为单一超级管理员注册专属特权菜单 (包含 /admin, /user, /guest, /check, /status, /stats, /broadcast)
+	// 2. 为单一超级管理员注册专属特权菜单 (包含 /admin, /user, /guest, /check, /status, /broadcast)
 	if cfg.AdminID != 0 {
 		adminCommands := []tele.Command{
 			{Text: "start", Description: "开启监控向导与欢迎信息"},
@@ -100,7 +100,6 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 			{Text: "admin", Description: "👑 [管理] 打开管理员控制面板"},
 			{Text: "check", Description: "👑 [管理] 查询当前在售库存与命中"},
 			{Text: "status", Description: "👑 [管理] 查看系统运行状态"},
-			{Text: "stats", Description: "👑 [管理] 查看系统资源与账号统计"},
 			{Text: "user", Description: "👑 [管理] 白名单授权管理"},
 			{Text: "guest", Description: "👑 [管理] 游客模式设置"},
 			{Text: "broadcast", Description: "👑 [管理] 向全员群发系统维护广播"},
