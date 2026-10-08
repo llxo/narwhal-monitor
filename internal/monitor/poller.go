@@ -157,12 +157,7 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 	// 如果处于冷启动（首次加载且未记录过历史），只建立索引不触发通知
 	if !p.isReady && len(p.state.KnownPlanIDs) == 0 && len(p.state.PlanStocks) == 0 {
 		for _, plan := range plans {
-			currentStock := plan.Remaining
-			if plan.SoldOut || plan.RamInsufficient {
-				currentStock = 0
-			} else if currentStock == 0 && !plan.SoldOut {
-				currentStock = -1
-			}
+			currentStock := plan.NormalizedRemaining()
 			p.state.PlanStocks[plan.ID] = currentStock
 			p.state.KnownPlanIDs[plan.ID] = true
 		}
@@ -173,13 +168,7 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 	var machineOrder []string
 
 	for _, plan := range plans {
-		currentStock := plan.Remaining
-		if plan.SoldOut || plan.RamInsufficient {
-			currentStock = 0
-		} else if currentStock == 0 && !plan.SoldOut {
-			// 0 且 sold_out 为 false 代表不限数量
-			currentStock = -1
-		}
+		currentStock := plan.NormalizedRemaining()
 
 		oldStock, existedInStocks := p.state.PlanStocks[plan.ID]
 		isKnown := p.state.KnownPlanIDs[plan.ID]
@@ -338,12 +327,7 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 
 	// 增量更新历史快照（保留未返回套餐的最后已知库存，杜绝网络抖动/下架重上架导致的虚假补货刷屏）
 	for _, plan := range plans {
-		currentStock := plan.Remaining
-		if plan.SoldOut || plan.RamInsufficient {
-			currentStock = 0
-		} else if currentStock == 0 && !plan.SoldOut {
-			currentStock = -1
-		}
+		currentStock := plan.NormalizedRemaining()
 		p.state.PlanStocks[plan.ID] = currentStock
 		p.state.KnownPlanIDs[plan.ID] = true
 	}

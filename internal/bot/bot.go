@@ -353,24 +353,14 @@ func (b *Bot) DispatchEvent(evt monitor.Event) {
 	allStocks := make(map[string]int)
 	allSoldOut := true
 	for _, p := range evt.TriggeredPlans {
-		rem := p.Remaining
-		if p.SoldOut || p.RamInsufficient {
-			rem = 0
-		} else if rem == 0 && !p.SoldOut {
-			rem = -1
-		}
+		rem := p.NormalizedRemaining()
 		allStocks[p.ID] = rem
 		if rem != 0 {
 			allSoldOut = false
 		}
 	}
 	for _, p := range evt.OtherPlans {
-		rem := p.Remaining
-		if p.SoldOut || p.RamInsufficient {
-			rem = 0
-		} else if rem == 0 && !p.SoldOut {
-			rem = -1
-		}
+		rem := p.NormalizedRemaining()
 		allStocks[p.ID] = rem
 		if rem != 0 {
 			allSoldOut = false

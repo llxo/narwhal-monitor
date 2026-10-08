@@ -41,6 +41,9 @@ type OSImage struct {
 	Name string `json:"name"`
 }
 
+// StockUnlimited 表示库存充裕 / 不限量
+const StockUnlimited = -1
+
 // PublicPlan 代表公开市场上的主机套餐信息
 type PublicPlan struct {
 	ID                 string    `json:"id"`
@@ -71,5 +74,20 @@ type PublicPlan struct {
 	CreatedAt          int64     `json:"created_at"`
 	UpdatedAt          int64     `json:"updated_at"`
 }
+
+// NormalizedRemaining 统一返回标准化的可用库存：
+// - 若已售罄 (SoldOut) 或母机内存不足 (RamInsufficient)，返回 0
+// - 若 Remaining 为 0 且未售罄，表示不限量 / 充足库存，返回 StockUnlimited (-1)
+// - 否则返回实际剩余数量
+func (p PublicPlan) NormalizedRemaining() int {
+	if p.SoldOut || p.RamInsufficient {
+		return 0
+	}
+	if p.Remaining == 0 && !p.SoldOut {
+		return StockUnlimited
+	}
+	return p.Remaining
+}
+
 
 

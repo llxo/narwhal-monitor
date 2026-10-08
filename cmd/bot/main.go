@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,6 +20,38 @@ import (
 	"narwhal-monitor/internal/monitor"
 	"narwhal-monitor/internal/storage"
 )
+
+// limitedWriter 限制单文件总大小不超过 20MB，超限时自动清空并从头覆盖写入
+type limitedWriter struct {
+	mu   sync.Mutex
+	file *os.File
+	size int64
+}
+
+func (w *limitedWriter) Write(p []byte) (n int, err error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.file == nil {
+		return 0, os.ErrInvalid
+	}
+	if w.size+int64(len(p)) > 20*1024*1024 {
+		_ = w.file.Truncate(0)
+		_, _ = w.file.Seek(0, 0)
+		w.size = 0
+	}
+	n, err = w.file.Write(p)
+	w.size += int64(n)
+	return n, err
+}
+
+func (w *limitedWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.file != nil {
+		return w.file.Close()
+	}
+	return nil
+}
 
 func main() {
 	envPath := flag.String("env", ".env", "环境变量配置文件路径 (.env)")
@@ -34,7 +67,7 @@ func main() {
 		log.Fatalf("[致命错误] 加载配置失败: %v", err)
 	}
 
-	// 2. 初始化持久化存储与日志双写落盘
+	// 2. 初始化持久化存储与日志双写落盘（上限 20MB，超限清空重写）
 	if err := os.MkdirAll(cfg.Storage.DataDir, 0755); err != nil {
 		log.Fatalf("[致命错误] 创建数据目录失败: %v", err)
 	}
@@ -43,19 +76,25 @@ func main() {
 	if customLog := strings.TrimSpace(os.Getenv("LOG_FILE")); customLog != "" {
 		logFilePath = customLog
 	}
+	_ = os.MkdirAll(filepath.Dir(logFilePath), 0755)
 
-	// 单文件超过 20MB 时自动轮转备份
-	if fi, err := os.Stat(logFilePath); err == nil && fi.Size() > 20*1024*1024 {
-		_ = os.Rename(logFilePath, logFilePath+".old")
-	}
-
-	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		log.Printf("[日志提示] 无法打开日志文件 %s: %v，保持控制台输出", logFilePath, err)
+	var logWriter *limitedWriter
+	if f, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+		var initSize int64
+		if fi, err := f.Stat(); err == nil {
+			initSize = fi.Size()
+			if initSize > 20*1024*1024 {
+				_ = f.Truncate(0)
+				_, _ = f.Seek(0, 0)
+				initSize = 0
+			}
+		}
+		logWriter = &limitedWriter{file: f, size: initSize}
+		defer logWriter.Close()
+		log.SetOutput(io.MultiWriter(os.Stdout, logWriter))
+		log.Printf("[日志系统] 已启用双写输出 (总限制 20MB，超限自动清空重写)，落盘路径: %s", logFilePath)
 	} else {
-		defer logFile.Close()
-		log.SetOutput(io.MultiWriter(os.Stdout, logFile))
-		log.Printf("[日志系统] 已启用双写输出，落盘日志路径: %s", logFilePath)
+		log.Printf("[日志提示] 无法打开日志文件 %s: %v，保持控制台输出", logFilePath, err)
 	}
 
 	store, err := storage.NewStore(cfg.Storage.DataDir)
@@ -186,7 +225,10 @@ func main() {
 		cancel()
 		tgBot.Stop()
 		engine.Close()
-		time.Sleep(500 * time.Millisecond)
+		if logWriter != nil {
+			_ = logWriter.Close()
+		}
+		time.Sleep(200 * time.Millisecond)
 		log.Println("[系统] 服务已安全退出。")
 		os.Exit(0)
 	}()
