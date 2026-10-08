@@ -24,8 +24,7 @@ func NewCardTracker(cards map[string]*storage.TrackedMachineMsg) *CardTracker {
 }
 
 // ShouldEdit 判断针对某母机与指定会话，当前是否应当编辑旧消息
-// 返回 targetMsgID 与 shouldEdit (true: 编辑旧消息; false: 推送全新卡片)
-func (t *CardTracker) ShouldEdit(machineKey string, chatID int64, isRestock bool) (int, bool) {
+func (t *CardTracker) ShouldEdit(machineKey string, chatID int64, isRestock bool, isNew bool, isEditOnly bool, newStocks map[string]int) (int, bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -39,20 +38,64 @@ func (t *CardTracker) ShouldEdit(machineKey string, chatID int64, isRestock bool
 		return 0, false
 	}
 
-	if isRestock {
-		// 补货场景：若距离上次推送在 30 分钟窗口内，编辑旧卡片；超过 30 分钟视为新周期，发送新卡片
-		if time.Since(card.SentAt) <= 30*time.Minute {
-			return msgID, true
-		}
+	// 纯库存减少或售罄场景：始终原地编辑
+	if isEditOnly {
+		return msgID, true
+	}
+
+	// 全新套餐首发：发送新卡片
+	if isNew {
 		return 0, false
 	}
 
-	// 纯库存减少或售罄场景：只要旧卡片存在，始终原地编辑
+	// 补货场景
+	if isRestock {
+		// 母机此前未售罄（持续有货）：退货或库存微调一律原地编辑，不发新消息
+		if !card.IsSoldOut {
+			return msgID, true
+		}
+
+		// 单次大批量放量 (增加 >= 5 台)：发送新卡片
+		totalAdded := 0
+		if newStocks != nil && card.PlanStocks != nil {
+			for pid, nStock := range newStocks {
+				oStock := card.PlanStocks[pid]
+				if nStock > oStock && oStock >= 0 {
+					totalAdded += (nStock - oStock)
+				} else if oStock == 0 && (nStock > 0 || nStock == -1) {
+					if nStock == -1 {
+						totalAdded += 10
+					} else {
+						totalAdded += nStock
+					}
+				}
+			}
+		}
+		if totalAdded >= 5 {
+			return 0, false
+		}
+
+		// 售罄 30 分钟防抖：退货或超时释放优先原地编辑旧卡片
+		soldOutRef := card.SoldOutAt
+		if soldOutRef.IsZero() {
+			soldOutRef = card.LastEditAt
+			if soldOutRef.IsZero() {
+				soldOutRef = card.SentAt
+			}
+		}
+		if !soldOutRef.IsZero() && time.Since(soldOutRef) < 30*time.Minute {
+			return msgID, true
+		}
+
+		// 彻底断货超 30 分钟后补货：发送新卡片
+		return 0, false
+	}
+
 	return msgID, true
 }
 
-// RecordPush 记录或更新全新发送的卡片消息 ID
-func (t *CardTracker) RecordPush(machineKey string, chatID int64, msgID int, stocks map[string]int) {
+// RecordPush 记录全新发送的卡片消息
+func (t *CardTracker) RecordPush(machineKey string, chatID int64, msgID int, stocks map[string]int, isSoldOut bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -67,6 +110,13 @@ func (t *CardTracker) RecordPush(machineKey string, chatID int64, msgID int, sto
 	}
 
 	card.SentAt = time.Now()
+	card.IsSoldOut = isSoldOut
+	if isSoldOut {
+		card.SoldOutAt = time.Now()
+	} else {
+		card.SoldOutAt = time.Time{}
+	}
+
 	if card.MsgIDs == nil {
 		card.MsgIDs = make(map[int64]int)
 	}
@@ -83,7 +133,7 @@ func (t *CardTracker) RecordPush(machineKey string, chatID int64, msgID int, sto
 }
 
 // RecordEdit 记录原地编辑旧消息
-func (t *CardTracker) RecordEdit(machineKey string, chatID int64, stocks map[string]int) {
+func (t *CardTracker) RecordEdit(machineKey string, chatID int64, stocks map[string]int, isSoldOut bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -93,6 +143,20 @@ func (t *CardTracker) RecordEdit(machineKey string, chatID int64, stocks map[str
 	}
 
 	card.LastEditAt = time.Now()
+
+	// 状态机演化：
+	if isSoldOut {
+		if !card.IsSoldOut {
+			// 从在售状态转变为全盘售罄状态
+			card.IsSoldOut = true
+			card.SoldOutAt = time.Now()
+		}
+	} else {
+		// 当前有货，清除售罄状态
+		card.IsSoldOut = false
+		card.SoldOutAt = time.Time{}
+	}
+
 	if stocks != nil {
 		if card.PlanStocks == nil {
 			card.PlanStocks = make(map[string]int)
@@ -166,6 +230,7 @@ func (t *CardTracker) GetCards() map[string]*storage.TrackedMachineMsg {
 			MachineKey: v.MachineKey,
 			SentAt:     v.SentAt,
 			LastEditAt: v.LastEditAt,
+			SoldOutAt:  v.SoldOutAt,
 			IsSoldOut:  v.IsSoldOut,
 			MsgIDs:     make(map[int64]int, len(v.MsgIDs)),
 			PlanStocks: make(map[string]int, len(v.PlanStocks)),

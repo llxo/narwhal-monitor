@@ -13,12 +13,13 @@ import (
 
 // TrackedMachineMsg 记录某台宿主机在各个 Chat 发送的最新消息卡片，用于原地编辑
 type TrackedMachineMsg struct {
-	MachineKey string         `json:"machine_key"`  // 机器唯一标识 (MachineID 或 MachineName)
-	SentAt     time.Time      `json:"sent_at"`      // 首次推送或最近一次发新通知时间
-	LastEditAt time.Time      `json:"last_edit_at"` // 上次编辑时间 (防抖)
-	MsgIDs     map[int64]int  `json:"msg_ids"`      // chatID -> messageID
-	PlanStocks map[string]int `json:"plan_stocks"`  // planID -> 该卡片当时记录的库存数量
-	IsSoldOut  bool           `json:"is_sold_out"`  // 该机器所有套餐是否均已售罄
+	MachineKey string         `json:"machine_key"`            // 机器唯一标识 (MachineID 或 MachineName)
+	SentAt     time.Time      `json:"sent_at"`                // 首次推送或最近一次发新通知时间
+	LastEditAt time.Time      `json:"last_edit_at"`           // 上次编辑时间 (防抖)
+	SoldOutAt  time.Time      `json:"sold_out_at,omitempty"`  // 进入全盘售罄状态的时间戳 (在售时为零值)
+	MsgIDs     map[int64]int  `json:"msg_ids"`                // chatID -> messageID
+	PlanStocks map[string]int `json:"plan_stocks"`            // planID -> 该卡片当时记录的库存数量
+	IsSoldOut  bool           `json:"is_sold_out"`            // 该机器所有套餐是否均已售罄
 }
 
 // MonitorState 用于保存上一轮监控快照，防止重启重复刷屏

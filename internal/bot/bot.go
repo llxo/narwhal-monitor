@@ -25,6 +25,7 @@ type pushTask struct {
 	stocks     map[string]int
 	isEdit     bool
 	isEditOnly bool
+	isSoldOut  bool
 }
 
 // Bot 是 Telegram 机器人的核心包装器
@@ -231,8 +232,9 @@ func (b *Bot) runPushWorker() {
 
 				if err == nil {
 					if b.tracker != nil && task.machineKey != "" {
-						b.tracker.RecordEdit(task.machineKey, task.chatID, task.stocks)
+						b.tracker.RecordEdit(task.machineKey, task.chatID, task.stocks, task.isSoldOut)
 					}
+					log.Printf("[编辑成功] 已原地更新 Chat %d 的卡片 | 机器: %s | MsgID: %d", task.chatID, task.machineKey, task.msgID)
 				} else {
 					errLower := strings.ToLower(err.Error())
 					if strings.Contains(errLower, "message is not modified") {
@@ -250,7 +252,8 @@ func (b *Bot) runPushWorker() {
 								sentMsg, err = b.teleBot.Send(chat, task.text, tele.ModeHTML, tele.NoPreview)
 							}
 							if err == nil && sentMsg != nil && b.tracker != nil && task.machineKey != "" {
-								b.tracker.RecordPush(task.machineKey, task.chatID, sentMsg.ID, task.stocks)
+								b.tracker.RecordPush(task.machineKey, task.chatID, sentMsg.ID, task.stocks, task.isSoldOut)
+								log.Printf("[推送成功(降级)] 已向 Chat %d 发送新卡片 | 机器: %s | MsgID: %d", task.chatID, task.machineKey, sentMsg.ID)
 							}
 						} else {
 							err = nil // 纯售罄/扣减更新且旧消息已不在，静默跳过
@@ -264,7 +267,8 @@ func (b *Bot) runPushWorker() {
 					sentMsg, err = b.teleBot.Send(chat, task.text, tele.ModeHTML, tele.NoPreview)
 				}
 				if err == nil && sentMsg != nil && b.tracker != nil && task.machineKey != "" {
-					b.tracker.RecordPush(task.machineKey, task.chatID, sentMsg.ID, task.stocks)
+					b.tracker.RecordPush(task.machineKey, task.chatID, sentMsg.ID, task.stocks, task.isSoldOut)
+					log.Printf("[推送成功] 已向 Chat %d 发送新卡片 | 机器: %s | MsgID: %d", task.chatID, task.machineKey, sentMsg.ID)
 				}
 			}
 			if err != nil {
@@ -346,10 +350,32 @@ func (b *Bot) DispatchEvent(evt monitor.Event) {
 		return
 	}
 
-	// 记录触发套餐的最新库存快照
-	stocks := make(map[string]int, len(evt.TriggeredPlans))
+	// 汇总该母机所有套餐的最新库存快照（涵盖触发套餐与同机其他套餐）并判定母机是否全盘售罄
+	allStocks := make(map[string]int)
+	allSoldOut := true
 	for _, p := range evt.TriggeredPlans {
-		stocks[p.ID] = p.Remaining
+		rem := p.Remaining
+		if p.SoldOut || p.RamInsufficient {
+			rem = 0
+		} else if rem == 0 && !p.SoldOut {
+			rem = -1
+		}
+		allStocks[p.ID] = rem
+		if rem != 0 {
+			allSoldOut = false
+		}
+	}
+	for _, p := range evt.OtherPlans {
+		rem := p.Remaining
+		if p.SoldOut || p.RamInsufficient {
+			rem = 0
+		} else if rem == 0 && !p.SoldOut {
+			rem = -1
+		}
+		allStocks[p.ID] = rem
+		if rem != 0 {
+			allSoldOut = false
+		}
 	}
 
 	// 区分优先级分流：超级管理员与正式白名单享有最高抢占优先级，游客排在其后
@@ -376,8 +402,9 @@ func (b *Bot) DispatchEvent(evt monitor.Event) {
 		var shouldEdit bool
 
 		if b.tracker != nil && evt.MachineKey != "" {
-			isRestock := (evt.Type == monitor.EventPlanRestock || evt.Type == monitor.EventPlanNew)
-			targetMsgID, shouldEdit = b.tracker.ShouldEdit(evt.MachineKey, chatID, isRestock)
+			isRestock := (evt.Type == monitor.EventPlanRestock)
+			isNew := (evt.Type == monitor.EventPlanNew)
+			targetMsgID, shouldEdit = b.tracker.ShouldEdit(evt.MachineKey, chatID, isRestock, isNew, evt.IsEditOnly, allStocks)
 		}
 
 		// 纯扣减/售罄编辑事件：若该 Chat 之前从未发送过卡片，则无需发新消息打扰
@@ -391,9 +418,10 @@ func (b *Bot) DispatchEvent(evt monitor.Event) {
 			markup:     markup,
 			msgID:      targetMsgID,
 			machineKey: evt.MachineKey,
-			stocks:     stocks,
+			stocks:     allStocks,
 			isEdit:     shouldEdit && targetMsgID > 0,
 			isEditOnly: evt.IsEditOnly,
+			isSoldOut:  allSoldOut,
 		}
 
 		select {
