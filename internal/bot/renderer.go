@@ -196,12 +196,15 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 		trigNames = append(trigNames, tp.Name)
 	}
 
-	stateTag := "上新/补货"
+	stateTag := "库存补货"
 	triggerTag := "刚刚补货"
 	allSoldOut := false
 	if evt.Type == monitor.EventPlanNew {
 		stateTag = "全新上架"
 		triggerTag = "全新上架"
+	} else if evt.Type == monitor.EventPlanRestock {
+		stateTag = "库存补货"
+		triggerTag = "刚刚补货"
 	} else if evt.Type == monitor.EventPlanUpdate {
 		allSoldOut = true
 		for _, tp := range trigPlans {
