@@ -146,6 +146,17 @@ func (p *Poller) poll(ctx context.Context) {
 	}
 }
 
+// stockWeight 统一衡量库存权重：售罄为 0，有限库存为其实际数量，StockUnlimited (-1) 视为极大值
+func stockWeight(stock int) int {
+	if stock == api.StockUnlimited {
+		return 1_000_000_000
+	}
+	if stock <= 0 {
+		return 0
+	}
+	return stock
+}
+
 type triggeredPlanInfo struct {
 	plan      api.PublicPlan
 	isNew     bool
@@ -202,13 +213,15 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) bool {
 				}
 			} else {
 				// 历史在库，计算差分
-				if oldStock == 0 && currentStock != 0 {
+				oldWeight := stockWeight(oldStock)
+				currWeight := stockWeight(currentStock)
+				if oldWeight == 0 && currWeight > 0 {
 					// 之前缺货售罄，现在恢复有库存 (补货)
 					isRestock = true
-				} else if oldStock > 0 && currentStock > oldStock {
+				} else if oldWeight > 0 && currWeight > oldWeight {
 					// 库存数量增加 (补货)
 					isRestock = true
-				} else if oldStock > 0 && (currentStock < oldStock || currentStock == 0) {
+				} else if oldWeight > 0 && currWeight < oldWeight {
 					// 库存数量减少或变为售罄 (扣减/售罄，供卡片原地编辑)
 					isReduced = true
 				}
