@@ -196,16 +196,19 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 		trigNames = append(trigNames, tp.Name)
 	}
 
-	stateTag := "上新/补货"
+	stateTag := "库存补货"
 	triggerTag := "刚刚补货"
 	allSoldOut := false
 	if evt.Type == monitor.EventPlanNew {
 		stateTag = "全新上架"
 		triggerTag = "全新上架"
+	} else if evt.Type == monitor.EventPlanRestock {
+		stateTag = "库存补货"
+		triggerTag = "刚刚补货"
 	} else if evt.Type == monitor.EventPlanUpdate {
 		allSoldOut = true
 		for _, tp := range trigPlans {
-			if !tp.SoldOut && !tp.RamInsufficient && (tp.Remaining > 0 || tp.Remaining == -1) {
+			if !tp.SoldOut && !tp.RamInsufficient {
 				allSoldOut = false
 				break
 			}
@@ -251,22 +254,21 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 
 	// 1. 触发套餐列表 (售罄标记为⚪，有货标记为🔥)
 	for _, tp := range trigPlans {
-		isSold := tp.SoldOut || tp.RamInsufficient || tp.Remaining == 0
+		isSold := tp.SoldOut || tp.RamInsufficient
 		icon := "🔥"
 		planTag := triggerTag
-		stockStr := "抢购中"
+		stockStr := "充足"
 		if isSold {
 			icon = "⚪"
-			planTag = "已售罄"
-			stockStr = "已售罄"
-		} else if tp.Remaining > 0 {
-			stockStr = fmt.Sprintf("余 %d 台", tp.Remaining)
-		} else if !tp.SoldOut && !tp.RamInsufficient {
-			stockStr = "充足"
+			sb.WriteString(fmt.Sprintf("%s <b>%s</b>  [已售罄]\n", icon, html.EscapeString(tp.Name)))
+		} else {
+			if tp.Remaining > 0 {
+				stockStr = fmt.Sprintf("余 %d 台", tp.Remaining)
+			}
+			sb.WriteString(fmt.Sprintf("%s <b>%s</b>  [%s] [%s]\n", icon, html.EscapeString(tp.Name), stockStr, planTag))
 		}
 		deployURL := fmt.Sprintf("https://dash.fuckip.me/deploy?plan_id=%s", tp.ID)
 
-		sb.WriteString(fmt.Sprintf("%s <b>%s</b>  [%s] [%s]\n", icon, html.EscapeString(tp.Name), stockStr, planTag))
 		sb.WriteString(fmt.Sprintf(" ├ 配置：%d核/%s/%dG/%dMbps\n", tp.CPU, formatRAM(tp.RamMB), tp.DiskGB, tp.BandwidthMbps))
 		sb.WriteString(fmt.Sprintf(" ├ 流量：%s | %s\n", formatTraffic(tp.MonthlyTrafficGB), formatPrice(tp.PriceMonthly)))
 		sb.WriteString(fmt.Sprintf(" └  👉 <a href=\"%s\">立即下单</a>\n", html.EscapeString(deployURL)))
@@ -342,7 +344,7 @@ func RenderPlanCard(evt monitor.Event) (string, *tele.ReplyMarkup) {
 	} else {
 		targetPlanID := trigPlans[0].ID
 		for _, tp := range trigPlans {
-			if !tp.SoldOut && !tp.RamInsufficient && (tp.Remaining > 0 || tp.Remaining == -1) {
+			if !tp.SoldOut && !tp.RamInsufficient {
 				targetPlanID = tp.ID
 				break
 			}

@@ -78,7 +78,7 @@ func (h *Handler) HandleCheck(c tele.Context) error {
 	var matchedPlans []api.PublicPlan
 
 	for _, p := range plans {
-		if p.SoldOut || p.RamInsufficient || p.Remaining == 0 {
+		if p.SoldOut || p.RamInsufficient {
 			continue
 		}
 		reg := strings.ToUpper(p.MachineRegion)

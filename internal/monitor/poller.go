@@ -15,6 +15,7 @@ import (
 
 // CardTrackerProvider 接口供持久化时同步卡片追踪信息
 type CardTrackerProvider interface {
+	SyncCards() (map[string]*storage.TrackedMachineMsg, bool)
 	GetCards() map[string]*storage.TrackedMachineMsg
 }
 
@@ -105,6 +106,8 @@ func (p *Poller) poll(ctx context.Context) {
 		return
 	}
 
+	stateDirty := false
+
 	// 轮询官方套餐与库存
 	plans, err := p.client.GetPlans(ctx)
 	if err != nil {
@@ -116,23 +119,42 @@ func (p *Poller) poll(ctx context.Context) {
 			log.Printf("[监控错误] 获取套餐失败: %v", err)
 		}
 	} else {
-		p.diffPlans(plans)
+		if p.diffPlans(plans) {
+			stateDirty = true
+		}
 	}
 
 	// 标记冷启动已完成，之后的变动均会触发真实通知推送
 	if !p.isReady {
 		p.isReady = true
+		stateDirty = true
 		log.Println("[监控] 初始数据快照建立完成，开始监听新事件推送...")
 	}
 
 	if p.cardProvider != nil {
-		p.state.TrackedCards = p.cardProvider.GetCards()
+		if updatedCards, changed := p.cardProvider.SyncCards(); changed {
+			p.state.TrackedCards = updatedCards
+			stateDirty = true
+		}
 	}
 
-	// 异步持久化当前状态快照
-	if err := p.store.SaveState(p.state); err != nil {
-		log.Printf("[监控警告] 保存状态失败: %v", err)
+	// 仅在快照或卡片状态发生实质变动时才持久化写盘，杜绝高频深拷贝与无效磁盘 I/O
+	if stateDirty {
+		if err := p.store.SaveState(p.state); err != nil {
+			log.Printf("[监控警告] 保存状态失败: %v", err)
+		}
 	}
+}
+
+// stockWeight 统一衡量库存权重：售罄为 0，有限库存为其实际数量，StockUnlimited (-1) 视为极大值
+func stockWeight(stock int) int {
+	if stock == api.StockUnlimited {
+		return 1_000_000_000
+	}
+	if stock <= 0 {
+		return 0
+	}
+	return stock
 }
 
 type triggeredPlanInfo struct {
@@ -143,7 +165,7 @@ type triggeredPlanInfo struct {
 	stock     int
 }
 
-func (p *Poller) diffPlans(plans []api.PublicPlan) {
+func (p *Poller) diffPlans(plans []api.PublicPlan) bool {
 	// 按机器归类所有公开套餐，供卡片展示同机器其他可选套餐
 	machinePlansMap := make(map[string][]api.PublicPlan, len(plans))
 	for _, plan := range plans {
@@ -161,7 +183,7 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 			p.state.PlanStocks[plan.ID] = currentStock
 			p.state.KnownPlanIDs[plan.ID] = true
 		}
-		return
+		return true
 	}
 
 	triggeredByMachine := make(map[string][]triggeredPlanInfo)
@@ -191,13 +213,15 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 				}
 			} else {
 				// 历史在库，计算差分
-				if oldStock == 0 && currentStock != 0 {
+				oldWeight := stockWeight(oldStock)
+				currWeight := stockWeight(currentStock)
+				if oldWeight == 0 && currWeight > 0 {
 					// 之前缺货售罄，现在恢复有库存 (补货)
 					isRestock = true
-				} else if oldStock > 0 && currentStock > oldStock {
+				} else if oldWeight > 0 && currWeight > oldWeight {
 					// 库存数量增加 (补货)
 					isRestock = true
-				} else if oldStock > 0 && (currentStock < oldStock || currentStock == 0) {
+				} else if oldWeight > 0 && currWeight < oldWeight {
 					// 库存数量减少或变为售罄 (扣减/售罄，供卡片原地编辑)
 					isReduced = true
 				}
@@ -325,12 +349,20 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) {
 		})
 	}
 
+	stateChanged := len(machineOrder) > 0
 	// 增量更新历史快照（保留未返回套餐的最后已知库存，杜绝网络抖动/下架重上架导致的虚假补货刷屏）
 	for _, plan := range plans {
 		currentStock := plan.NormalizedRemaining()
-		p.state.PlanStocks[plan.ID] = currentStock
-		p.state.KnownPlanIDs[plan.ID] = true
+		if oldStock, exists := p.state.PlanStocks[plan.ID]; !exists || oldStock != currentStock {
+			p.state.PlanStocks[plan.ID] = currentStock
+			stateChanged = true
+		}
+		if !p.state.KnownPlanIDs[plan.ID] {
+			p.state.KnownPlanIDs[plan.ID] = true
+			stateChanged = true
+		}
 	}
+	return stateChanged
 }
 
 func (p *Poller) emitEvent(evt Event) {

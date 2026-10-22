@@ -144,7 +144,7 @@ func (s *Store) SaveState(state *MonitorState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	data, err := json.MarshalIndent(state, "", "  ")
+	data, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("序列化状态失败: %w", err)
 	}

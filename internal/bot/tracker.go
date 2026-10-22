@@ -15,12 +15,15 @@ const (
 	SoldOutDebounceWindow = 30 * time.Minute
 	// BatchRestockThreshold 单次大批量放量阈值。累计增加 >= 3 台视为重大补货，触发新卡片推送
 	BatchRestockThreshold = 3
+	// MaxTrackedCardAge 卡片跟踪最大保留时间（36 小时）。超过此时间的母机记录自动淘汰，释放内存
+	MaxTrackedCardAge = 36 * time.Hour
 )
 
 // CardTracker 跟踪各母机卡片在各个 Chat 中的发送记录，支撑动态编辑与智能分流
 type CardTracker struct {
 	mu    sync.RWMutex
 	cards map[string]*storage.TrackedMachineMsg // machineKey -> TrackedMachineMsg
+	dirty bool
 }
 
 // NewCardTracker 创建卡片消息生命周期跟踪器
@@ -30,6 +33,7 @@ func NewCardTracker(cards map[string]*storage.TrackedMachineMsg) *CardTracker {
 	}
 	return &CardTracker{
 		cards: cards,
+		dirty: true,
 	}
 }
 
@@ -162,6 +166,7 @@ func (t *CardTracker) RecordPush(machineKey string, chatID int64, msgID int, sto
 			card.PlanStocks[k] = v
 		}
 	}
+	t.dirty = true
 }
 
 // RecordEdit 记录原地编辑旧消息
@@ -197,6 +202,7 @@ func (t *CardTracker) RecordEdit(machineKey string, chatID int64, stocks map[str
 			card.PlanStocks[k] = v
 		}
 	}
+	t.dirty = true
 }
 
 // InvalidateMessage 当 Telegram 反馈消息不存在或已被删除时，清理该卡片记录
@@ -207,6 +213,26 @@ func (t *CardTracker) InvalidateMessage(machineKey string, chatID int64) {
 	card, ok := t.cards[machineKey]
 	if ok && card != nil && card.MsgIDs != nil {
 		delete(card.MsgIDs, chatID)
+		t.dirty = true
+	}
+}
+
+func (t *CardTracker) cleanExpiredLocked(maxAge time.Duration) {
+	now := time.Now()
+	for k, card := range t.cards {
+		if card == nil {
+			delete(t.cards, k)
+			t.dirty = true
+			continue
+		}
+		refTime := card.LastEditAt
+		if refTime.IsZero() {
+			refTime = card.SentAt
+		}
+		if !refTime.IsZero() && now.Sub(refTime) > maxAge {
+			delete(t.cards, k)
+			t.dirty = true
+		}
 	}
 }
 
@@ -214,45 +240,10 @@ func (t *CardTracker) InvalidateMessage(machineKey string, chatID int64) {
 func (t *CardTracker) CleanExpired(maxAge time.Duration) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	now := time.Now()
-	for k, card := range t.cards {
-		if card == nil {
-			delete(t.cards, k)
-			continue
-		}
-		refTime := card.LastEditAt
-		if refTime.IsZero() {
-			refTime = card.SentAt
-		}
-		if !refTime.IsZero() && now.Sub(refTime) > maxAge {
-			delete(t.cards, k)
-		}
-	}
+	t.cleanExpiredLocked(maxAge)
 }
 
-// GetCards 获取内部卡片快照供持久化（执行深拷贝，切断外部引用，杜绝并发 map 读写 panic）
-func (t *CardTracker) GetCards() map[string]*storage.TrackedMachineMsg {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// 顺便淘汰 7 天以上无活动的旧卡片记录
-	now := time.Now()
-	const maxAge = 7 * 24 * time.Hour
-	for k, card := range t.cards {
-		if card == nil {
-			delete(t.cards, k)
-			continue
-		}
-		refTime := card.LastEditAt
-		if refTime.IsZero() {
-			refTime = card.SentAt
-		}
-		if !refTime.IsZero() && now.Sub(refTime) > maxAge {
-			delete(t.cards, k)
-		}
-	}
-
+func (t *CardTracker) copyCardsLocked() map[string]*storage.TrackedMachineMsg {
 	result := make(map[string]*storage.TrackedMachineMsg, len(t.cards))
 	for k, v := range t.cards {
 		if v == nil {
@@ -276,4 +267,27 @@ func (t *CardTracker) GetCards() map[string]*storage.TrackedMachineMsg {
 		result[k] = item
 	}
 	return result
+}
+
+// SyncCards 若自上次同步以来卡片状态发生过变动，则淘汰过期记录并返回全新深拷贝快照与 true；若无变动返回 nil 与 false (零分配)
+func (t *CardTracker) SyncCards() (map[string]*storage.TrackedMachineMsg, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.cleanExpiredLocked(MaxTrackedCardAge)
+
+	if !t.dirty {
+		return nil, false
+	}
+	t.dirty = false
+	return t.copyCardsLocked(), true
+}
+
+// GetCards 获取内部卡片快照供持久化（执行深拷贝，切断外部引用，杜绝并发 map 读写 panic）
+func (t *CardTracker) GetCards() map[string]*storage.TrackedMachineMsg {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	t.cleanExpiredLocked(MaxTrackedCardAge)
+	return t.copyCardsLocked()
 }
