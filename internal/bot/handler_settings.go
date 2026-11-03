@@ -134,7 +134,7 @@ func (h *Handler) sendFilterHelp(c tele.Context) error {
 • <code>/filter list</code> - 查看当前生效规则
 • <code>/filter regex 优化|cn2</code> - 快速添加正向匹配
 • <code>/filter exclude 实验|纯v6</code> - 快速添加反向排除
-• <code>/filter add price<=0.5 ram>=256m</code> - 添加复合过滤规则
+• <code>/filter add price&lt;=0.5 ram&gt;=256m</code> - 添加复合过滤规则
 • <code>/filter del r1001</code> - 删除指定规则
 • <code>/filter clear</code> - 清空所有自定义规则
 
@@ -145,9 +145,9 @@ func (h *Handler) sendFilterHelp(c tele.Context) error {
 • <code>/filter exclude 实验|无v4|纯v6</code> (排除纯 IPv6 或实验节点)
 
 <b>3. 复合规则示例 (/filter add)：</b>
-• <code>/filter add price<=0.5 ram>=256m</code> (月付≤0.5$ 且 内存≥256M)
-• <code>/filter add ram<=128m price<=0.3</code> (月付≤0.3$ 且 内存≤128M)
-• <code>/filter add price<=1 region=HK,JP</code> (月付≤1$ 且 限定港日)
+• <code>/filter add price&lt;=0.5 ram&gt;=256m</code> (月付≤0.5$ 且 内存≥256M)
+• <code>/filter add ram&lt;=128m price&lt;=0.3</code> (月付≤0.3$ 且 内存≤128M)
+• <code>/filter add price&lt;=1 region=HK,JP</code> (月付≤1$ 且 限定港日)
 
 <i>💡 如需通过按钮点选地区或限价，请输入 /menu 打开控制台。</i>`
 	return h.replyAutoDelete(c, helpText, tele.ModeHTML)
@@ -370,7 +370,7 @@ func (h *Handler) parseAndAddRule(c tele.Context, chatID int64, tokens []string)
 	if rule.MaxPrice == 0 && rule.MinPrice == 0 && len(rule.Regions) == 0 &&
 		rule.MinCPU == 0 && rule.MaxCPU == 0 && rule.MinRAM == 0 && rule.MaxRAM == 0 &&
 		rule.Regex == "" && rule.ExcludeRegex == "" {
-		return h.replyAutoDelete(c, "❌ <b>未能识别到有效的过滤条件</b>\n\n示例：\n• 正则匹配: <code>/filter regex 64m|128m</code>\n• 复合条件: <code>/filter add price<=0.5 ram>=256m</code>", tele.ModeHTML)
+		return h.replyAutoDelete(c, "❌ <b>未能识别到有效的过滤条件</b>\n\n示例：\n• 正则匹配: <code>/filter regex 64m|128m</code>\n• 复合条件: <code>/filter add price&lt;=0.5 ram&gt;=256m</code>", tele.ModeHTML)
 	}
 
 	cr, err := h.engine.AddRule(chatID, rule)
