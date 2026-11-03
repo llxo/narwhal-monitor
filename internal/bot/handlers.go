@@ -184,6 +184,7 @@ func (h *Handler) RegisterRoutes(b *tele.Bot) {
 	member.Use(h.RequireMember)
 	member.Handle("/menu", h.HandleMenu)
 	member.Handle("/filter", h.HandleFilter)
+	member.Handle("/bw", h.HandleBandwidth)
 
 	// 白名单内联交互按钮
 	member.Handle(&tele.Btn{Unique: "btn_reg"}, h.HandleBtnRegion)
@@ -267,6 +268,7 @@ func (h *Handler) registerAdminCommands(b *tele.Bot, adminID int64) {
 	adminCommands := []tele.Command{
 		{Text: "start", Description: "开启监控向导与欢迎信息"},
 		{Text: "menu", Description: "打开交互式过滤菜单面板"},
+		{Text: "bw", Description: "设置带宽过滤门槛"},
 		{Text: "filter", Description: "查看或配置高级正则过滤规则"},
 		{Text: "sub", Description: "切换推送通知 (开启/暂停)"},
 		{Text: "mute", Description: "开启临时免打扰 (/mute 1h)"},

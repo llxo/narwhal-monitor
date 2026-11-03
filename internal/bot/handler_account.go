@@ -67,7 +67,7 @@ func (h *Handler) HandleRegister(c tele.Context) error {
 		return h.replyAutoDelete(c, fmt.Sprintf("ℹ️ <b>您当前已是【Narwhal 游客用户】</b>\n\n"+
 			"• <b>推送通道:</b> 🟢 默认激活（全量未过滤上新与补货）\n"+
 			"• <b>推送状态:</b> %s\n"+
-			"• <b>推送管理:</b> 发送 <code>/sub</code> 切换开启/暂停，发送 <code>/guest leave</code> 注销退出\n\n"+
+			"• <b>推送管理:</b> 发送 /sub 切换开启/暂停，发送 <code>/guest leave</code> 注销退出\n\n"+
 			"<i>💡 游客模式为全量广播体验；自选地区与高级过滤仅对【正式白名单会员】开放。</i>", statusStr), tele.ModeHTML)
 	}
 
@@ -95,7 +95,7 @@ func (h *Handler) HandleRegister(c tele.Context) error {
 
 	return h.replyAutoDelete(c, "🎉 <b>恭喜！您已成功登记为【Narwhal 游客用户】</b>\n\n"+
 		"• <b>推送通道:</b> 🟢 默认激活（接收平台<b>全部未过滤</b>的上新与补货通知）\n"+
-		"• <b>推送管理:</b> 发送 <code>/sub</code> 即可一键开启/暂停，发送 <code>/guest leave</code> 可注销退出\n\n"+
+		"• <b>推送管理:</b> 发送 /sub 即可一键开启/暂停，发送 <code>/guest leave</code> 可注销退出\n\n"+
 		"<i>💡 游客模式为全量广播体验；自选地区与高级过滤仅对【正式白名单会员】开放。</i>", tele.ModeHTML)
 }
 
@@ -136,7 +136,7 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 					if limit > 0 {
 						limitStr = fmt.Sprintf("%d 人", limit)
 					}
-					return c.Send(fmt.Sprintf("当前游客名额限制: <b>%s</b>\n用法: <code>/guest limit &lt;数字&gt;</code> (0为不限制)", limitStr), tele.ModeHTML)
+					return c.Send(fmt.Sprintf("当前游客名额限制: <b>%s</b>\n用法: <code>/guest limit 20</code> (0为不限制)", limitStr), tele.ModeHTML)
 				}
 				num, err := strconv.Atoi(args[2])
 				if err != nil || num < 0 {
@@ -155,7 +155,7 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 			if sub == "on" || sub == "open" {
 				h.engine.SetGuestModeEnabled(true)
 				log.Printf("[系统配置] 管理员 %d 开启游客模式", senderID)
-				return c.Send("✅ <b>游客模式已开启</b>，外部用户可通过 <code>/register</code> 自由注册。", tele.ModeHTML)
+				return c.Send("✅ <b>游客模式已开启</b>，外部用户可通过 /register 自由注册。", tele.ModeHTML)
 			}
 
 			// 1.4 /guest off | close
@@ -201,9 +201,9 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 			"<b>🛠️ 管理指令速查:</b>\n"+
 			"• <code>/guest on</code> - 开启游客体验注册通道\n"+
 			"• <code>/guest off</code> - 关闭游客体验注册通道\n"+
-			"• <code>/guest limit &lt;数量&gt;</code> - 设置限制名额 (亦可直接输入 <code>/guest &lt;数字&gt;</code>)\n"+
-			"• <code>/user upgrade &lt;ID&gt;</code> - 一键将游客转为正式白名单\n"+
-			"• <code>/user del &lt;ID&gt;</code> - 移除游客并停用推送\n\n"+
+			"• <code>/guest limit 20</code> - 设置限制名额 (0为不限)\n"+
+			"• <code>/user upgrade 123456789</code> - 一键转为正式白名单\n"+
+			"• <code>/user del 123456789</code> - 移除游客并停用推送\n\n"+
 			"<i>💡 您可以直接点击下方快捷按钮进行操作：</i>",
 			guestStatus, limitStr, guestCount, remainingStr)
 
@@ -235,9 +235,8 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 	// ==========================================
 	if h.engine.IsAuthorized(chatID) || h.engine.IsAuthorized(senderID) {
 		return h.replyAutoDelete(c, "💎 <b>您当前已拥有【正式白名单会员】权限</b>\n\n"+
-			"• 您已解锁 39 地区自选、极低限价与线路高级正则过滤特权，推送通道享有最高抢占优先级！\n"+
-			"• 无需降级为游客体验模式。\n\n"+
-			"<i>💡 发送 <code>/menu</code> 打开您的专属定制面板，发送 <code>/sub</code> 可随时启闭推送。</i>", tele.ModeHTML)
+			"• 您已拥有正式白名单会员权限，无需重复开通。\n\n"+
+			"<i>💡 发送 /menu 打开您的专属定制面板，发送 /sub 可随时启闭推送。</i>", tele.ModeHTML)
 	}
 
 	// ==========================================
@@ -256,9 +255,9 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 			"• <b>推送通道:</b> 🟢 平台全部未过滤补货广播\n"+
 			"• <b>推送状态:</b> %s\n\n"+
 			"<b>🛠️ 常用指令速查:</b>\n"+
-			"• 发送 <code>/sub</code> - 快速切换开启/暂停推送\n"+
-			"• 发送 <code>/mute 1h</code> - 开启临时免打扰 1 小时\n"+
-			"• 发送 <code>/guest leave</code> - 注销并退出游客名单\n\n"+
+			"• /sub - 快速切换开启/暂停推送\n"+
+			"• <code>/mute 1h</code> - 开启临时免打扰 1 小时\n"+
+			"• <code>/guest leave</code> - 注销并退出游客名单\n\n"+
 			"<i>💡 提示: 自选地区/限价/正则过滤仅对【正式白名单会员】开放。如需专属定制，请将您的 ID 发送给管理员申请转正！</i>", chatID, statusStr), tele.ModeHTML)
 	}
 
@@ -272,12 +271,11 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 	}
 
 	return h.replyAutoDelete(c, fmt.Sprintf("👋 <b>【Narwhal Cloud 游客体验模式说明】</b>\n\n"+
-		"游客模式是为外部 VPS 玩家提供的免费轻量监控体验通道。\n\n"+
-		"• <b>通道特性:</b> 免费接收平台全部未过滤的最新补货与上新推送\n"+
+		"• <b>通道特性:</b> 接收平台全部未过滤的最新补货与上新推送\n"+
 		"• <b>当前状态:</b> %s\n\n"+
 		"🚀 <b>如何开通体验？</b>\n"+
-		"直接发送 <code>/register</code> 即可一键登记开通，秒级激活补货推送！\n\n"+
-		"<i>💡 注: 如需精准过滤特定地区（如香港、日本）或月付≤0.5$特价玩具机，可联系管理员开通正式白名单。</i>", statusTip), tele.ModeHTML)
+		"直接发送 /register 即可一键登记开通，激活补货推送。\n\n"+
+		"<i>💡 注: 如需定制地区、限价或带宽过滤，可联系管理员开通正式白名单。</i>", statusTip), tele.ModeHTML)
 }
 
 // HandleUser 管理员专属白名单用户管理指令
@@ -290,13 +288,13 @@ func (h *Handler) HandleUser(c tele.Context) error {
 	if len(args) <= 1 {
 		usage := `📖 <b>【用户与权限管理指南】</b> (超级管理员专属)
 
-• <code>/user add &lt;ID&gt; [备注]</code> - 授权新用户或群组并激活订阅
-• <code>/user upgrade &lt;ID&gt;</code> - 将游客一键转为正式白名单
-• <code>/user downgrade &lt;ID&gt;</code> - 将正式白名单降级为游客
-• <code>/user del &lt;ID&gt;</code> - 移除白名单或游客并停用推送
+• <code>/user add 123456789 张三</code> - 授权新用户并激活订阅
+• <code>/user upgrade 123456789</code> - 将游客一键转为正式白名单
+• <code>/user downgrade 123456789</code> - 将正式白名单降级为游客
+• <code>/user del 123456789</code> - 移除白名单或游客并停用推送
 • <code>/user list</code> - 查看当前正式白名单列表
 • <code>/user guests</code> - 查看当前所有游客白名单列表
-• <code>/guest limit &lt;数量&gt;</code> - 设置游客名额限制数 (0为不限)`
+• <code>/guest limit 20</code> - 设置游客名额限制数 (0为不限)`
 		return c.Send(usage, tele.ModeHTML)
 	}
 
@@ -321,9 +319,10 @@ func (h *Handler) HandleUser(c tele.Context) error {
 			go func() {
 				_, _ = c.Bot().Send(&tele.Chat{ID: targetID},
 					"🎉 <b>管理员已为您开通 Narwhal Cloud 监控正式权限！</b>\n\n"+
-						"• 官方交互菜单: 输入 <code>/menu</code> 即可定制您的专属地区与价格\n"+
-						"• 高级过滤配置: 输入 <code>/filter</code> 定制线路与关键词高级正则\n"+
-						"• 过滤配置帮助: 输入 <code>/help</code> 查看规则编写指引\n\n"+
+						"• 发送 /menu 即可打开控制台定制地区与价格\n"+
+						"• 发送 <code>/bw 50</code> 设置带宽门槛\n"+
+						"• 发送 <code>/filter regex 优化</code> 定制高级正则\n"+
+						"• 发送 /help 查看完整帮助\n\n"+
 						"<i>💡 您的专属监控已自动开启，有符合您偏好的补货将在此第一时间推送！</i>", tele.ModeHTML)
 			}()
 		}
@@ -350,8 +349,9 @@ func (h *Handler) HandleUser(c tele.Context) error {
 					_, _ = c.Bot().Send(&tele.Chat{ID: targetID},
 						"🎉 <b>恭喜！管理员已将您升级为【正式白名单会员】！</b>\n\n"+
 							"• 您已解锁专属过滤特权！\n"+
-							"• 发送 <code>/menu</code> 可自由定制 30+ 地区与价格上限\n"+
-							"• 发送 <code>/filter</code> 可定制线路与关键词高级正则", tele.ModeHTML)
+							"• 发送 /menu 自由定制地区与价格上限\n"+
+							"• 发送 <code>/bw 50</code> 过滤带宽门槛\n"+
+							"• 发送 <code>/filter regex 优化</code> 定制线路高级正则", tele.ModeHTML)
 				}()
 			}
 			return c.Send(fmt.Sprintf("✅ <b>已成功将游客 <code>%d</code> 转正为正式白名单！</b>", targetID), tele.ModeHTML)
@@ -443,6 +443,6 @@ func (h *Handler) HandleUser(c tele.Context) error {
 		return c.Send(sb.String(), tele.ModeHTML)
 
 	default:
-		return c.Send("❌ 未知子命令。输入 <code>/user</code> 查看用法。", tele.ModeHTML)
+		return c.Send("❌ 未知子命令。输入 /user 查看用法。", tele.ModeHTML)
 	}
 }

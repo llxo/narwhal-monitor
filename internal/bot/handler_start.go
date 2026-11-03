@@ -36,16 +36,15 @@ func (h *Handler) HandleStart(c tele.Context) error {
 	if h.isAdmin(c) {
 		go h.registerAdminCommands(c.Bot(), senderID)
 		text := "👑 <b>【Narwhal Cloud 超级管理员控制台】</b>\n\n" +
-			fmt.Sprintf("• <b>超级管理员 ID:</b> <code>%d</code> (您自身)\n", chatID) +
-			"• <b>服务架构:</b> 实时差分监控 + 毫秒级补货广播 + 防洪限流熔断\n\n" +
+			fmt.Sprintf("• <b>超级管理员 ID:</b> <code>%d</code> (您自身)\n\n", chatID) +
 			"<b>🛠️ 管理员特权指令速查:</b>\n" +
-			"• <code>/admin</code> - 打开管理员专属主控制面板\n" +
-			"• <code>/check</code> - 立即扫描平台实时在售库存与命中套餐\n" +
-			"• <code>/status</code> - 查看系统监控、物理内存与账户运行状态\n" +
-			"• <code>/user</code> - 白名单授权、转正与删除管理\n" +
-			"• <code>/guest</code> - 游客模式开关与名额配额控制\n" +
-			"• <code>/broadcast</code> - 向全体活跃订阅会话群发广播\n\n" +
-			"<i>💡 输入 <code>/admin</code> 可调出控制台面板快速点按操作。</i>"
+			"• /admin - 打开管理员专属主控制面板\n" +
+			"• /check - 立即扫描平台实时在售库存与命中套餐\n" +
+			"• /status - 查看系统监控、物理内存与账户运行状态\n" +
+			"• /user - 白名单授权、转正与删除管理\n" +
+			"• /guest - 游客模式开关与名额配额控制\n" +
+			"• <code>/broadcast 系统维护通知</code> - 向全体活跃订阅会话群发广播\n\n" +
+			"<i>💡 发送 /admin 可调出控制台面板快速点按操作。</i>"
 		return c.Send(text, tele.ModeHTML)
 	}
 
@@ -64,12 +63,12 @@ func (h *Handler) HandleStart(c tele.Context) error {
 			fmt.Sprintf("• <b>会话 Chat ID:</b> <code>%d</code>\n", chatID) +
 			fmt.Sprintf("• <b>推送状态:</b> %s\n\n", statusStr) +
 			"🚀 <b>专属功能与快捷操作:</b>\n" +
-			"• 发送 <code>/menu</code> - 打开交互式控制台，自由定制 39 个地区白名单与最高限价\n" +
-			"• 发送 <code>/filter</code> - 配置线路、IPv4、内存或关键词高级正则过滤规则\n" +
-			"• 发送 <code>/sub</code> - 一键快速切换通知推送 (开启/暂停)\n" +
+			"• 发送 /menu - 打开交互式控制台，自由定制 39 个地区白名单与最高限价\n" +
+			"• 发送 <code>/bw 50</code> - 设置带宽门槛（支持下限如 <code>/bw 50</code>、区间如 <code>/bw 20 1000</code>）\n" +
+			"• 发送 <code>/filter regex 优化</code> - 配置线路、IPv4、内存或关键词高级正则过滤规则\n" +
+			"• 发送 /sub - 一键快速切换通知推送 (开启/暂停)\n" +
 			"• 发送 <code>/mute 1h</code> - 开启临时免打扰 (支持 30m, 2h 等)\n" +
-			"• 发送 <code>/help</code> - 查看完整规则编写指南与实战语法示例\n\n" +
-			"<i>💡 您的监控规则专属独立隔离，有符合偏好的新补货将在此第一时间推送！</i>"
+			"• 发送 /help - 查看完整规则编写指南与实战语法示例"
 		return h.replyAutoDelete(c, text, tele.ModeHTML)
 	}
 
@@ -87,7 +86,7 @@ func (h *Handler) HandleStart(c tele.Context) error {
 			fmt.Sprintf("• <b>推送状态:</b> %s\n\n", statusStr) +
 			"• <b>推送通道:</b> 🟢 默认接收平台<b>全部未过滤</b>的补货与上新广播\n\n" +
 			"<b>🛠️ 可用指令速查:</b>\n" +
-			"• 发送 <code>/sub</code> - 一键切换通知推送 (开启/暂停)\n" +
+			"• 发送 /sub - 一键切换通知推送 (开启/暂停)\n" +
 			"• 发送 <code>/mute 1h</code> - 开启临时免打扰\n" +
 			"• 发送 <code>/guest leave</code> - 注销并退出游客名单\n\n" +
 			"<i>💡 提示: 自选地区、最高限价与高级正则过滤仅对【正式白名单会员】开放。如需专属定制规则，请将上方 Chat ID 发送给管理员申请升级！</i>"
@@ -99,7 +98,7 @@ func (h *Handler) HandleStart(c tele.Context) error {
 	guestTip := ""
 	if guestAvailable {
 		guestTip = "🎉 <b>当前系统已开放免费游客体验！</b>\n" +
-			"直接发送 <code>/register</code> 即可一键登记为游客，立刻激活接收平台全量最新补货推送！\n\n"
+			"直接发送 /register 即可一键登记为游客，立刻激活接收平台全量最新补货推送！\n\n"
 	}
 
 	idType := "您的 Chat ID"
@@ -113,9 +112,8 @@ func (h *Handler) HandleStart(c tele.Context) error {
 		guestTip +
 		"💎 <b>正式白名单会员特权:</b>\n" +
 		"• 支持 39 个地区自选白名单过滤 (港/日/美/新/德/英等)\n" +
-		"• 支持月付价格上限精准过滤 (如 ≤0.5$ 极低成本小鸡)\n" +
-		"• 支持 CN2 / CMI / 9929 / NAT双栈 等高级正则过滤\n" +
-		"• 享最高优先级抢占推送通道\n\n" +
+		"• 支持月付价格上限过滤 (如 ≤0.5$)\n" +
+		"• 支持 CN2 / CMI / 9929 / NAT双栈 等高级正则过滤\n\n" +
 		"<i>💡 如需开通正式白名单，请将上方 Chat ID 发送给管理员。</i>"
 
 	return h.replyAutoDelete(c, text, tele.ModeHTML)
@@ -124,42 +122,39 @@ func (h *Handler) HandleStart(c tele.Context) error {
 // HandleHelp /help 使用帮助
 func (h *Handler) HandleHelp(c tele.Context) error {
 	var sb strings.Builder
-	sb.WriteString(`📖 <b>【Narwhal Monitor 命令与正则过滤使用指南】</b>
+	sb.WriteString(`📖 <b>【Narwhal Monitor 命令与过滤指南】</b>
 
 <b>1. 基础与监控</b>
-• <code>/menu</code> - 调出交互式按钮控制台（点按切换地区/限价）
-• <code>/id</code> - 查看当前私聊或群聊的 Chat ID
+• /menu - 调出交互式按钮控制台
+• /id - 查看当前会话 Chat ID
+• /sub - 一键快速切换通知推送 (开启/暂停)
 
-<b>2. 规则快速过滤命令（即设即生效）</b>
+<b>2. 规则快速过滤命令（点击复制）</b>
+• <code>/bw 50</code> - 设置带宽门槛（亦支持 <code>/bw 20 1000</code>、<code>/bw 0</code> 清除）
+• <code>/mute 1h</code> - 临时免打扰 1 小时（<code>/mute 0</code> 解除）
 • <code>/filter list</code> - 查看当前已生效的规则列表
-• <code>/filter add [条件...]</code> - 添加复合过滤规则
-• <code>/filter regex &lt;正则表达式&gt;</code> - 快速添加正向正则过滤（满足才推）
-• <code>/filter exclude &lt;正则表达式&gt;</code> - 快速添加反向正则排除（满足则丢弃）
-• <code>/filter del &lt;规则ID&gt;</code> - 删除指定规则
+• <code>/filter regex 优化|cn2|9929|cmi</code> - 快速添加正向正则（满足才推）
+• <code>/filter exclude 实验|无v4|纯v6</code> - 快速添加反向正则（满足则丢弃）
+• <code>/filter add price<=0.5 ram>=256m</code> - 添加复合过滤规则
+• <code>/filter del r1001</code> - 删除指定规则
 • <code>/filter clear</code> - 清空所有自定义规则
 
-<b>3. 实用场景与语法示例：</b>
-• <code>/filter regex 64m|128m</code> (快捷监控 64M 或 128M 特价玩具小鸡)
-• <code>/filter regex 优化|cn2|9929|cmi</code> (仅看三网精品线路)
+<b>3. 实用语法示例：</b>
+• <code>/filter regex 64m|128m</code> (监控 64M 或 128M 规格)
 • <code>/filter regex 双栈|v4|端口</code> (监控带 IPv4 端口映射的 NAT 节点)
-• <code>/filter exclude 实验|无v4|纯v6</code> (排除实验或纯 IPv6 节点)
-• <code>/filter add price&lt;=0.5 ram&gt;=256m</code> (月付≤0.5$ 且 内存≥256MB)
-• <code>/filter add ram&lt;=128m price&lt;=0.3</code> (淘 ≤128M 极低成本玩具机)
-• <code>/filter add price&lt;=1 region=HK,JP</code> (月付≤1$ 且限定香港或日本)
-
-<b>4. 通知开关与免打扰</b>
-• <code>/sub</code> - 一键快速切换通知推送 (开启/暂停)
-• <code>/mute 2h</code> - 临时免打扰 2 小时 (支持 30m, 1h, 6h 等)`)
+• <code>/filter add ram<=128m price<=0.3</code> (内存 ≤128M 且月付 ≤$0.3)
+• <code>/filter add price<=1 region=HK,JP</code> (限定香港或日本且月付≤1$)`)
 
 	if h.isAdmin(c) {
-		sb.WriteString("\n\n<b>5. 👑 超级管理员特权指令</b>\n" +
-			"• <code>/check</code> - 立即扫描平台当前在售库存与命中套餐\n" +
-			"• <code>/status</code> - 查看系统监控运行状态与账户余额\n" +
-			"• <code>/user add &lt;ID&gt; [备注]</code> - 授权新用户或群组并激活订阅\n" +
-			"• <code>/user del &lt;ID&gt;</code> - 移除白名单或游客并停用推送\n" +
-			"• <code>/user list</code> - 查看完整白名单列表与规则状态\n" +
-			"• <code>/guest limit &lt;数量&gt;</code> - 设置游客名额限制数 (0为不限)\n" +
-			"• <code>/broadcast &lt;内容&gt;</code> - 向全员群发系统维护广播")
+		sb.WriteString("\n\n<b>4. 👑 超级管理员特权指令</b>\n" +
+			"• /check - 立即扫描平台当前在售库存与命中套餐\n" +
+			"• /status - 查看系统监控运行状态与物理内存\n" +
+			"• /admin - 打开超级管理员控制面板\n" +
+			"• <code>/user add 123456789 张三</code> - 授权新用户并激活订阅\n" +
+			"• <code>/user del 123456789</code> - 移除白名单或游客并停用推送\n" +
+			"• <code>/user list</code> - 查看完整白名单列表\n" +
+			"• <code>/guest limit 20</code> - 设置游客限制数 (0为不限)\n" +
+			"• <code>/broadcast 系统维护通知</code> - 向全员群发维护广播")
 		return c.Send(sb.String(), tele.ModeHTML)
 	}
 
@@ -210,11 +205,11 @@ func (h *Handler) HandleSub(c tele.Context) error {
 
 	if newSub {
 		log.Printf("[订阅切换] 会话 %d 开启推送通知", chatID)
-		return h.replyAutoDelete(c, "🔔 <b>通知推送已开启！</b>\n有满足条件的新补货将第一时间推送给您。\n<i>(再次发送 <code>/sub</code> 可随时暂停推送)</i>", tele.ModeHTML)
+		return h.replyAutoDelete(c, "🔔 <b>通知推送已开启！</b>\n有满足条件的新补货将第一时间推送给您。\n<i>(再次发送 /sub 可随时暂停推送)</i>", tele.ModeHTML)
 	}
 
 	log.Printf("[订阅切换] 会话 %d 暂停推送通知", chatID)
-	return h.replyAutoDelete(c, "🔕 <b>通知推送已暂停！</b>\n已暂时停止向该会话发送补货通知。\n<i>(再次发送 <code>/sub</code> 即可立即恢复接收)</i>", tele.ModeHTML)
+	return h.replyAutoDelete(c, "🔕 <b>通知推送已暂停！</b>\n已暂时停止向该会话发送补货通知。\n<i>(再次发送 /sub 即可立即恢复接收)</i>", tele.ModeHTML)
 }
 
 // HandleMute /mute 临时免打扰

@@ -260,6 +260,7 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) bool {
 		hasRestock := false
 		hasReduced := false
 		minPrice := items[0].plan.PriceMonthly
+		maxBandwidth := items[0].plan.BandwidthMbps
 
 		for _, item := range items {
 			trigPlans = append(trigPlans, item.plan)
@@ -276,6 +277,9 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) bool {
 			}
 			if item.plan.PriceMonthly < minPrice {
 				minPrice = item.plan.PriceMonthly
+			}
+			if item.plan.BandwidthMbps > maxBandwidth {
+				maxBandwidth = item.plan.BandwidthMbps
 			}
 		}
 
@@ -330,7 +334,7 @@ func (p *Poller) diffPlans(plans []api.PublicPlan) bool {
 			CPU:         firstPlan.CPU,
 			RamMB:       firstPlan.RamMB,
 			DiskGB:      firstPlan.DiskGB,
-			Bandwidth:   firstPlan.BandwidthMbps,
+			Bandwidth:   maxBandwidth,
 			MachineName: firstPlan.MachineName,
 			Tags:        firstPlan.MachineTags,
 			IsRestock:   hasRestock,

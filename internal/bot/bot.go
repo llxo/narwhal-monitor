@@ -74,6 +74,7 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 		{Text: "register", Description: "登记为游客"},
 		{Text: "guest", Description: "游客模式管理"},
 		{Text: "menu", Description: "打开交互式过滤菜单面板"},
+		{Text: "bw", Description: "设置带宽过滤门槛"},
 		{Text: "filter", Description: "查看或配置高级正则过滤规则"},
 		{Text: "sub", Description: "切换推送通知 (开启/暂停)"},
 		{Text: "mute", Description: "开启临时免打扰 (/mute 1h)"},
@@ -92,6 +93,7 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 		adminCommands := []tele.Command{
 			{Text: "start", Description: "开启监控向导与欢迎信息"},
 			{Text: "menu", Description: "打开交互式过滤菜单面板"},
+			{Text: "bw", Description: "设置带宽过滤门槛"},
 			{Text: "filter", Description: "查看或配置高级正则过滤规则"},
 			{Text: "sub", Description: "切换推送通知 (开启/暂停)"},
 			{Text: "mute", Description: "开启临时免打扰 (/mute 1h)"},
@@ -317,9 +319,9 @@ func (b *Bot) SendStartupNotify(adminID int64, interval int) {
 		"• <b>轮询周期:</b> 每 %d 秒扫描一次\n"+
 		"• <b>超级管理员:</b> <code>%d</code> (您自身)\n"+
 		"• <b>快捷指令:</b>\n"+
-		"  - 发送 <code>/check</code> 立即获取当前各地区实时库存\n"+
-		"  - 发送 <code>/menu</code> 点击按钮快速定制地区与限价\n"+
-		"  - 发送 <code>/admin</code> 打开管理员控制中心\n\n"+
+		"  - 发送 /check 立即获取当前各地区实时库存\n"+
+		"  - 发送 /menu 快速定制地区与限价\n"+
+		"  - 发送 /admin 打开管理员控制中心\n\n"+
 		"<i>💡 监控已就绪，有符合偏好的补货将在此第一时间推送！</i>", interval, adminID)
 
 	_, err := b.teleBot.Send(&tele.Chat{ID: adminID}, msg, tele.ModeHTML)

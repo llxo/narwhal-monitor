@@ -89,20 +89,20 @@ func (h *Handler) HandleFilter(c tele.Context) error {
 			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
 		}
 		if len(args) < 3 {
-			return h.replyAutoDelete(c, "❌ 用法错误: 请输入要删除的规则 ID，例如: <code>/filter del r1001</code>", tele.ModeHTML)
+			return h.replyAutoDelete(c, "❌ 请指定规则 ID，示例: <code>/filter del r1001</code>", tele.ModeHTML)
 		}
 		ruleID := args[2]
 		if h.engine.DeleteRule(chatID, ruleID) {
 			return h.replyAutoDelete(c, fmt.Sprintf("✅ 规则 <code>%s</code> 已删除并即时失效！", html.EscapeString(ruleID)), tele.ModeHTML)
 		}
-		return h.replyAutoDelete(c, fmt.Sprintf("❌ 未找到 ID 为 <code>%s</code> 的规则，请使用 <code>/filter list</code> 查看有效 ID。", html.EscapeString(ruleID)), tele.ModeHTML)
+		return h.replyAutoDelete(c, fmt.Sprintf("❌ 未找到 ID 为 <code>%s</code> 的规则，输入 <code>/filter list</code> 查看有效 ID。", html.EscapeString(ruleID)), tele.ModeHTML)
 	case "regex":
 		perm := h.checkPermission(c)
 		if !perm.Allowed {
 			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
 		}
 		if len(args) < 3 {
-			return h.replyAutoDelete(c, "❌ 用法错误: <code>/filter regex &lt;表达式&gt;</code>\n例如: <code>/filter regex (?i)cn2|香港|hk</code>", tele.ModeHTML)
+			return h.replyAutoDelete(c, "❌ 请输入正则表达式，示例: <code>/filter regex 优化|cn2</code>", tele.ModeHTML)
 		}
 		rawRegex := strings.Join(args[2:], " ")
 		return h.addSimpleRegexRule(c, chatID, rawRegex, false)
@@ -112,7 +112,7 @@ func (h *Handler) HandleFilter(c tele.Context) error {
 			return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
 		}
 		if len(args) < 3 {
-			return h.replyAutoDelete(c, "❌ 用法错误: <code>/filter exclude &lt;表达式&gt;</code>\n例如: <code>/filter exclude nat|ipv6-only</code>", tele.ModeHTML)
+			return h.replyAutoDelete(c, "❌ 请输入排除表达式，示例: <code>/filter exclude 实验|纯v6</code>", tele.ModeHTML)
 		}
 		rawRegex := strings.Join(args[2:], " ")
 		return h.addSimpleRegexRule(c, chatID, rawRegex, true)
@@ -130,38 +130,33 @@ func (h *Handler) HandleFilter(c tele.Context) error {
 func (h *Handler) sendFilterHelp(c tele.Context) error {
 	helpText := `🔍 <b>【Narwhal Monitor 高级过滤规则使用指南】</b>
 
-💡 <i>平台主要提供特色 NAT 小鸡（多在 1$ 内，内存 64MB 起步），已深度支持精细化规格过滤。</i>
+<b>1. 规则管理命令（点击复制）：</b>
+• <code>/filter list</code> - 查看当前生效规则
+• <code>/filter regex 优化|cn2</code> - 快速添加正向匹配
+• <code>/filter exclude 实验|纯v6</code> - 快速添加反向排除
+• <code>/filter add price<=0.5 ram>=256m</code> - 添加复合过滤规则
+• <code>/filter del r1001</code> - 删除指定规则
+• <code>/filter clear</code> - 清空所有自定义规则
 
-<b>1. 规则管理命令：</b>
-• <code>/filter list</code> - 查看当前会话已生效的规则列表
-• <code>/filter regex &lt;正则&gt;</code> - 快速添加正向匹配（命中才推，自动忽略大小写）
-• <code>/filter exclude &lt;正则&gt;</code> - 快速添加反向排除（命中则丢弃）
-• <code>/filter add &lt;参数...&gt;</code> - 添加多维度复合过滤规则
-• <code>/filter del &lt;规则ID&gt;</code> - 删除指定规则（如 <code>/filter del r1001</code>）
-• <code>/filter clear</code> - 清空当前所有自定义高级规则
+<b>2. 快捷正则示例：</b>
+• <code>/filter regex 64m|128m</code> (匹配 64M 或 128M 内存)
+• <code>/filter regex 优化|cn2|9929|cmi</code> (三网精品线路)
+• <code>/filter regex 双栈|v4|端口</code> (带 IPv4 端口映射节点)
+• <code>/filter exclude 实验|无v4|纯v6</code> (排除纯 IPv6 或实验节点)
 
-<b>2. 快捷正则匹配示例：</b>
-• <code>/filter regex 64m|128m</code> <i>(快捷蹲守 64M/128M 超低价玩具机)</i>
-• <code>/filter regex 优化|cn2|9929|cmi</code> <i>(仅看三网精品线路，大小写自适应)</i>
-• <code>/filter regex 双栈|v4|端口</code> <i>(监控带 IPv4 端口映射的 NAT 节点)</i>
-• <code>/filter regex 原生|解锁|流媒体|住宅|家宽</code> <i>(监控特色 IP 与家宽节点)</i>
-• <code>/filter exclude 实验|无v4|纯v6</code> <i>(反向排除纯 IPv6 或实验节点)</i>
+<b>3. 复合规则示例 (/filter add)：</b>
+• <code>/filter add price<=0.5 ram>=256m</code> (月付≤0.5$ 且 内存≥256M)
+• <code>/filter add ram<=128m price<=0.3</code> (月付≤0.3$ 且 内存≤128M)
+• <code>/filter add price<=1 region=HK,JP</code> (月付≤1$ 且 限定港日)
 
-<b>3. 复合规则语法示例 (/filter add)：</b>
-• <code>/filter add price&lt;=0.5 ram&gt;=256m</code> (月付≤0.5$ 且 内存≥256M)
-• <code>/filter add ram&lt;=128m price&lt;=0.3</code> (月付≤0.3$ 且 内存≤128M 玩具鸡)
-• <code>/filter add price&lt;=1 region=HK,JP</code> (月付≤1$ 且 限定港日)
-• <code>/filter add price&lt;=0.5 regex=cmi|bgp</code> (价格与线路组合过滤)
-• <code>/filter add 优化|cmi</code> (直接传入关键词快速过滤)
-
-<i>💡 如需通过可视化按钮点选地区或限价，请输入 <code>/menu</code> 打开控制台。</i>`
+<i>💡 如需通过按钮点选地区或限价，请输入 /menu 打开控制台。</i>`
 	return h.replyAutoDelete(c, helpText, tele.ModeHTML)
 }
 
 func (h *Handler) listRules(c tele.Context, chatID int64) error {
 	cfg := h.engine.GetChatConfig(chatID)
 	if len(cfg.Rules) == 0 {
-		return h.replyAutoDelete(c, "📋 当前没有配置任何高级过滤规则，系统按照基础菜单设置推送。\n输入 <code>/help</code> 可查看如何添加规则。", tele.ModeHTML)
+		return h.replyAutoDelete(c, "📋 当前没有配置任何高级过滤规则，系统按照基础菜单设置推送。\n输入 /help 可查看如何添加规则。", tele.ModeHTML)
 	}
 
 	var sb strings.Builder
@@ -196,7 +191,7 @@ func (h *Handler) listRules(c tele.Context, chatID int64) error {
 		if r.ExcludeRegex != "" {
 			sb.WriteString(fmt.Sprintf("  • 排除正则: <code>%s</code>\n", html.EscapeString(r.ExcludeRegex)))
 		}
-		sb.WriteString(fmt.Sprintf("  <i>(删除此规则: /filter del %s)</i>\n\n", r.ID))
+		sb.WriteString(fmt.Sprintf("  <i>(删除此规则: <code>/filter del %s</code>)</i>\n\n", r.ID))
 	}
 
 	return h.replyAutoDelete(c, sb.String(), tele.ModeHTML)
@@ -256,7 +251,7 @@ func parseRAM(val string) int {
 	} else {
 		// 纯数字
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
-			// 在小鸡平台（64MB起步），<= 16 通常意指 GB（如 1 代表 1G，0.5 代表 512M）；>= 32 视为 MB
+			// 在平台（64MB起步），<= 16 通常意指 GB（如 1 代表 1G，0.5 代表 512M）；>= 32 视为 MB
 			if f <= 16 {
 				return int(f * 1024)
 			}
@@ -375,7 +370,7 @@ func (h *Handler) parseAndAddRule(c tele.Context, chatID int64, tokens []string)
 	if rule.MaxPrice == 0 && rule.MinPrice == 0 && len(rule.Regions) == 0 &&
 		rule.MinCPU == 0 && rule.MaxCPU == 0 && rule.MinRAM == 0 && rule.MaxRAM == 0 &&
 		rule.Regex == "" && rule.ExcludeRegex == "" {
-		return h.replyAutoDelete(c, "❌ <b>未能识别到有效的过滤条件</b>\n\n用法示例：\n• 快速添加正则匹配：<code>/filter regex 64m|128m</code>\n• 复合条件过滤：<code>/filter add price&lt;=0.5 ram&gt;=256m region=HK</code>", tele.ModeHTML)
+		return h.replyAutoDelete(c, "❌ <b>未能识别到有效的过滤条件</b>\n\n示例：\n• 正则匹配: <code>/filter regex 64m|128m</code>\n• 复合条件: <code>/filter add price<=0.5 ram>=256m</code>", tele.ModeHTML)
 	}
 
 	cr, err := h.engine.AddRule(chatID, rule)
@@ -501,4 +496,118 @@ func (h *Handler) HandleBtnMenuHome(c tele.Context) error {
 	text := RenderSettingsText(cfg)
 	markup := BuildMenuKeyboard(c.Bot(), cfg)
 	return c.Edit(text, markup, tele.ModeHTML)
+}
+
+// parseBandwidthValue 解析用户输入的带宽参数（支持如 50, 50m, 50mbps, 1g, 1000 等，单位换算为 Mbps）
+func parseBandwidthValue(s string) (int, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return 0, false
+	}
+	if s == "0" || s == "clear" || s == "none" || s == "reset" || s == "off" || s == "不限" {
+		return 0, true
+	}
+	if strings.HasSuffix(s, "gbps") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(s, "gbps"))
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return int(f * 1000), true
+		}
+	} else if strings.HasSuffix(s, "g") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(s, "g"))
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return int(f * 1000), true
+		}
+	} else if strings.HasSuffix(s, "mbps") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(s, "mbps"))
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return int(f), true
+		}
+	} else if strings.HasSuffix(s, "m") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(s, "m"))
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return int(f), true
+		}
+	} else {
+		// 纯数字
+		if f, err := strconv.ParseFloat(s, 64); err == nil && f >= 0 {
+			return int(f), true
+		}
+	}
+	return 0, false
+}
+
+// HandleBandwidth /bw 命令：设置或查看带宽过滤阈值
+func (h *Handler) HandleBandwidth(c tele.Context) error {
+	chatID := c.Chat().ID
+	args := getCommandArgs(c)
+
+	perm := h.checkPermission(c)
+	if !perm.Allowed {
+		return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
+	}
+
+	cfg := h.engine.GetChatConfig(chatID)
+
+	// 1. 无参数：查看当前带宽过滤状态与使用说明
+	if len(args) <= 1 {
+		currentDesc := "不限"
+		if cfg.MinBandwidth > 0 && cfg.MaxBandwidth > 0 {
+			currentDesc = fmt.Sprintf("%d ~ %d Mbps", cfg.MinBandwidth, cfg.MaxBandwidth)
+		} else if cfg.MinBandwidth > 0 {
+			currentDesc = fmt.Sprintf("≥ %d Mbps", cfg.MinBandwidth)
+		} else if cfg.MaxBandwidth > 0 {
+			currentDesc = fmt.Sprintf("≤ %d Mbps", cfg.MaxBandwidth)
+		}
+
+		text := fmt.Sprintf(`🌐 <b>【带宽过滤设置】</b>
+
+• <b>当前设置:</b> <code>%s</code>
+
+<b>用法:</b>
+• <code>/bw 50</code> - 设置下限为 50 Mbps
+• <code>/bw 20 1000</code> - 设置范围为 20 ~ 1000 Mbps
+• <code>/bw 0</code> - 清除限制`, currentDesc)
+		return h.replyAutoDelete(c, text, tele.ModeHTML)
+	}
+
+	// 2. 单参数：/bw 50 或 /bw 0 / clear
+	if len(args) == 2 {
+		valStr := args[1]
+		if strings.EqualFold(valStr, "clear") || strings.EqualFold(valStr, "reset") || strings.EqualFold(valStr, "off") {
+			h.engine.SetBandwidth(chatID, 0, 0)
+			return h.replyAutoDelete(c, "🧹 已清除带宽限制")
+		}
+
+		minBW, ok := parseBandwidthValue(valStr)
+		if !ok {
+			return h.replyAutoDelete(c, "❌ 参数错误，示例：<code>/bw 50</code>、<code>/bw 20 1000</code>、<code>/bw 0</code>", tele.ModeHTML)
+		}
+
+		if minBW <= 0 {
+			h.engine.SetBandwidth(chatID, 0, 0)
+			return h.replyAutoDelete(c, "🧹 已清除带宽限制")
+		}
+
+		h.engine.SetBandwidth(chatID, minBW, 0)
+		return h.replyAutoDelete(c, fmt.Sprintf("✅ 带宽下限已设置为 <b>≥ %d Mbps</b>", minBW), tele.ModeHTML)
+	}
+
+	// 3. 双参数：/bw 20 1000
+	minBW, ok1 := parseBandwidthValue(args[1])
+	maxBW, ok2 := parseBandwidthValue(args[2])
+	if !ok1 || !ok2 {
+		return h.replyAutoDelete(c, "❌ 参数错误，示例：<code>/bw 50</code>、<code>/bw 20 1000</code>、<code>/bw 0</code>", tele.ModeHTML)
+	}
+
+	if minBW > maxBW {
+		minBW, maxBW = maxBW, minBW
+	}
+
+	if minBW <= 0 && maxBW <= 0 {
+		h.engine.SetBandwidth(chatID, 0, 0)
+		return h.replyAutoDelete(c, "🧹 已清除带宽限制")
+	}
+
+	h.engine.SetBandwidth(chatID, minBW, maxBW)
+	return h.replyAutoDelete(c, fmt.Sprintf("✅ 带宽范围已设置为 <b>%d ~ %d Mbps</b>", minBW, maxBW), tele.ModeHTML)
 }

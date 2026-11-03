@@ -58,6 +58,12 @@ func (p *ItemPayload) BuildSearchString() string {
 	if p.DiskGB > 0 {
 		sb.WriteString(fmt.Sprintf(" %dg %dgb", p.DiskGB, p.DiskGB))
 	}
+	if p.Bandwidth > 0 {
+		sb.WriteString(fmt.Sprintf(" %dm %dmbps", p.Bandwidth, p.Bandwidth))
+		if p.Bandwidth >= 1000 && p.Bandwidth%1000 == 0 {
+			sb.WriteString(fmt.Sprintf(" %dg %dgbps", p.Bandwidth/1000, p.Bandwidth/1000))
+		}
+	}
 	if p.Price > 0 {
 		sb.WriteString(fmt.Sprintf(" %g$ %.2f$", p.Price, p.Price))
 	}
