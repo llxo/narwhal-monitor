@@ -74,6 +74,7 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 		{Text: "register", Description: "登记为游客"},
 		{Text: "guest", Description: "游客模式管理"},
 		{Text: "menu", Description: "打开交互式过滤菜单面板"},
+		{Text: "bw", Description: "设置带宽过滤门槛"},
 		{Text: "filter", Description: "查看或配置高级正则过滤规则"},
 		{Text: "sub", Description: "切换推送通知 (开启/暂停)"},
 		{Text: "mute", Description: "开启临时免打扰 (/mute 1h)"},
@@ -92,6 +93,7 @@ func NewBot(cfg Config, engine *filter.Engine, apiClient *api.Client) (*Bot, err
 		adminCommands := []tele.Command{
 			{Text: "start", Description: "开启监控向导与欢迎信息"},
 			{Text: "menu", Description: "打开交互式过滤菜单面板"},
+			{Text: "bw", Description: "设置带宽过滤门槛"},
 			{Text: "filter", Description: "查看或配置高级正则过滤规则"},
 			{Text: "sub", Description: "切换推送通知 (开启/暂停)"},
 			{Text: "mute", Description: "开启临时免打扰 (/mute 1h)"},
