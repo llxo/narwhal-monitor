@@ -11,7 +11,7 @@ docs/
 *.dll
 *.so
 *.dylib
-narwhal-bot
+narwhal-bot*
 bin/
 dist/
 

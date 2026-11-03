@@ -151,6 +151,15 @@ func RenderSettingsText(cfg filter.ChatConfig) string {
 		priceDesc = fmt.Sprintf("≤ %s$/月", s)
 	}
 
+	bwDesc := "不限带宽"
+	if cfg.MinBandwidth > 0 && cfg.MaxBandwidth > 0 {
+		bwDesc = fmt.Sprintf("%d ~ %d Mbps", cfg.MinBandwidth, cfg.MaxBandwidth)
+	} else if cfg.MinBandwidth > 0 {
+		bwDesc = fmt.Sprintf("≥ %d Mbps", cfg.MinBandwidth)
+	} else if cfg.MaxBandwidth > 0 {
+		bwDesc = fmt.Sprintf("≤ %d Mbps", cfg.MaxBandwidth)
+	}
+
 	var sb strings.Builder
 	if cfg.ChatID < 0 {
 		groupRemark := ""
@@ -165,6 +174,7 @@ func RenderSettingsText(cfg filter.ChatConfig) string {
 	sb.WriteString(fmt.Sprintf("• <b>当前状态:</b> %s\n", status))
 	sb.WriteString(fmt.Sprintf("• <b>地区白名单:</b> <code>%s</code>\n", regDesc))
 	sb.WriteString(fmt.Sprintf("• <b>价格上限:</b> <code>%s</code>\n", priceDesc))
+	sb.WriteString(fmt.Sprintf("• <b>带宽门槛:</b> <code>%s</code>\n", bwDesc))
 	sb.WriteString(fmt.Sprintf("• <b>高级自定义规则:</b> %d 条生效中 (/filter list 查看)\n\n", len(cfg.Rules)))
 	sb.WriteString("<i>💡 提示: 按钮即点即生效；面板 1 分钟未操作自动清屏自毁，亦可随时点击【🗑️ 关闭面板】立即清理</i>")
 

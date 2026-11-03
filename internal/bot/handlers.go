@@ -184,6 +184,7 @@ func (h *Handler) RegisterRoutes(b *tele.Bot) {
 	member.Use(h.RequireMember)
 	member.Handle("/menu", h.HandleMenu)
 	member.Handle("/filter", h.HandleFilter)
+	member.Handle("/bw", h.HandleBandwidth)
 
 	// 白名单内联交互按钮
 	member.Handle(&tele.Btn{Unique: "btn_reg"}, h.HandleBtnRegion)

@@ -65,6 +65,7 @@ func (h *Handler) HandleStart(c tele.Context) error {
 			fmt.Sprintf("• <b>推送状态:</b> %s\n\n", statusStr) +
 			"🚀 <b>专属功能与快捷操作:</b>\n" +
 			"• 发送 <code>/menu</code> - 打开交互式控制台，自由定制 39 个地区白名单与最高限价\n" +
+			"• 发送 <code>/bw 50</code> - 设置带宽门槛（支持下限如 <code>/bw 50</code>、区间如 <code>/bw 20 1000</code>）\n" +
 			"• 发送 <code>/filter</code> - 配置线路、IPv4、内存或关键词高级正则过滤规则\n" +
 			"• 发送 <code>/sub</code> - 一键快速切换通知推送 (开启/暂停)\n" +
 			"• 发送 <code>/mute 1h</code> - 开启临时免打扰 (支持 30m, 2h 等)\n" +
@@ -131,6 +132,7 @@ func (h *Handler) HandleHelp(c tele.Context) error {
 • <code>/id</code> - 查看当前私聊或群聊的 Chat ID
 
 <b>2. 规则快速过滤命令（即设即生效）</b>
+• <code>/bw [下限] [上限]</code> - 设置带宽门槛（如 <code>/bw 50</code>、<code>/bw 20 1000</code>、<code>/bw 0</code> 清除）
 • <code>/filter list</code> - 查看当前已生效的规则列表
 • <code>/filter add [条件...]</code> - 添加复合过滤规则
 • <code>/filter regex &lt;正则表达式&gt;</code> - 快速添加正向正则过滤（满足才推）

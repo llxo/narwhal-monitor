@@ -18,6 +18,8 @@ type ChatConfig struct {
 	MutedUntil    time.Time       `json:"muted_until"`      // 静音截至时间
 	QuickRegions  []string        `json:"quick_regions"`    // 内联菜单选中的快速地区白名单（空表示全选）
 	QuickMaxPrice float64         `json:"quick_max_price"`  // 内联菜单选中的快速限价（<=0 表示不限）
+	MinBandwidth  int             `json:"min_bandwidth,omitempty"` // 带宽下限 (Mbps, <=0 表示不限)
+	MaxBandwidth  int             `json:"max_bandwidth,omitempty"` // 带宽上限 (Mbps, <=0 表示不限)
 	Rules         []Rule          `json:"rules"`            // 高级过滤规则列表
 	compiledRules []*CompiledRule `json:"-"`                // 内存中已预编译规则缓存
 }
@@ -607,6 +609,27 @@ func (e *Engine) SetQuickMaxPrice(chatID int64, maxPrice float64) {
 	e.notifySaveLocked()
 }
 
+// SetBandwidth 设置指定 Chat 的带宽限制范围 (Mbps)，minBW 或 maxBW <=0 表示不限制对应边界
+func (e *Engine) SetBandwidth(chatID int64, minBW, maxBW int) (int, int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	cfg := e.getOrCreateChatLocked(chatID)
+	if minBW < 0 {
+		minBW = 0
+	}
+	if maxBW < 0 {
+		maxBW = 0
+	}
+	if maxBW > 0 && minBW > maxBW {
+		minBW, maxBW = maxBW, minBW
+	}
+	cfg.MinBandwidth = minBW
+	cfg.MaxBandwidth = maxBW
+	e.notifySaveLocked()
+	return cfg.MinBandwidth, cfg.MaxBandwidth
+}
+
 // IsGuestModeEnabled 检查当前是否开启游客模式
 func (e *Engine) IsGuestModeEnabled() bool {
 	e.mu.RLock()
@@ -864,7 +887,15 @@ func (e *Engine) Evaluate(chatID int64, p *ItemPayload) bool {
 		return false
 	}
 
-	// 4. 检查自定义高级过滤规则（包含正则）
+	// 4. 检查带宽阈值过滤 (排除低于下限或超出范围的机器)
+	if cfg.MinBandwidth > 0 && p.Bandwidth < cfg.MinBandwidth {
+		return false
+	}
+	if cfg.MaxBandwidth > 0 && p.Bandwidth > cfg.MaxBandwidth {
+		return false
+	}
+
+	// 5. 检查自定义高级过滤规则（包含正则）
 	if len(cfg.compiledRules) == 0 {
 		// 无自定义高级规则时，通过基础过滤即可推送
 		return true

@@ -502,3 +502,117 @@ func (h *Handler) HandleBtnMenuHome(c tele.Context) error {
 	markup := BuildMenuKeyboard(c.Bot(), cfg)
 	return c.Edit(text, markup, tele.ModeHTML)
 }
+
+// parseBandwidthValue 解析用户输入的带宽参数（支持如 50, 50m, 50mbps, 1g, 1000 等，单位换算为 Mbps）
+func parseBandwidthValue(s string) (int, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return 0, false
+	}
+	if s == "0" || s == "clear" || s == "none" || s == "reset" || s == "off" || s == "不限" {
+		return 0, true
+	}
+	if strings.HasSuffix(s, "gbps") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(s, "gbps"))
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return int(f * 1000), true
+		}
+	} else if strings.HasSuffix(s, "g") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(s, "g"))
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return int(f * 1000), true
+		}
+	} else if strings.HasSuffix(s, "mbps") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(s, "mbps"))
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return int(f), true
+		}
+	} else if strings.HasSuffix(s, "m") {
+		numStr := strings.TrimSpace(strings.TrimSuffix(s, "m"))
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return int(f), true
+		}
+	} else {
+		// 纯数字
+		if f, err := strconv.ParseFloat(s, 64); err == nil && f >= 0 {
+			return int(f), true
+		}
+	}
+	return 0, false
+}
+
+// HandleBandwidth /bw 命令：设置或查看带宽过滤阈值
+func (h *Handler) HandleBandwidth(c tele.Context) error {
+	chatID := c.Chat().ID
+	args := getCommandArgs(c)
+
+	perm := h.checkPermission(c)
+	if !perm.Allowed {
+		return h.replyAutoDelete(c, "⚠️ 权限不足: "+perm.Reason+"。")
+	}
+
+	cfg := h.engine.GetChatConfig(chatID)
+
+	// 1. 无参数：查看当前带宽过滤状态与使用说明
+	if len(args) <= 1 {
+		currentDesc := "不限"
+		if cfg.MinBandwidth > 0 && cfg.MaxBandwidth > 0 {
+			currentDesc = fmt.Sprintf("%d ~ %d Mbps", cfg.MinBandwidth, cfg.MaxBandwidth)
+		} else if cfg.MinBandwidth > 0 {
+			currentDesc = fmt.Sprintf("≥ %d Mbps", cfg.MinBandwidth)
+		} else if cfg.MaxBandwidth > 0 {
+			currentDesc = fmt.Sprintf("≤ %d Mbps", cfg.MaxBandwidth)
+		}
+
+		text := fmt.Sprintf(`🌐 <b>【带宽过滤设置】</b>
+
+• <b>当前设置:</b> <code>%s</code>
+
+<b>用法:</b>
+• <code>/bw 50</code> - 设置下限为 50 Mbps
+• <code>/bw 20 1000</code> - 设置范围为 20 ~ 1000 Mbps
+• <code>/bw 0</code> - 清除限制`, currentDesc)
+		return h.replyAutoDelete(c, text, tele.ModeHTML)
+	}
+
+	// 2. 单参数：/bw 50 或 /bw 0 / clear
+	if len(args) == 2 {
+		valStr := args[1]
+		if strings.EqualFold(valStr, "clear") || strings.EqualFold(valStr, "reset") || strings.EqualFold(valStr, "off") {
+			h.engine.SetBandwidth(chatID, 0, 0)
+			return h.replyAutoDelete(c, "🧹 已清除带宽限制")
+		}
+
+		minBW, ok := parseBandwidthValue(valStr)
+		if !ok {
+			return h.replyAutoDelete(c, "❌ 参数错误，示例：<code>/bw 50</code>、<code>/bw 20 1000</code>、<code>/bw 0</code>", tele.ModeHTML)
+		}
+
+		if minBW <= 0 {
+			h.engine.SetBandwidth(chatID, 0, 0)
+			return h.replyAutoDelete(c, "🧹 已清除带宽限制")
+		}
+
+		h.engine.SetBandwidth(chatID, minBW, 0)
+		return h.replyAutoDelete(c, fmt.Sprintf("✅ 带宽下限已设置为 <b>≥ %d Mbps</b>", minBW), tele.ModeHTML)
+	}
+
+	// 3. 双参数：/bw 20 1000
+	minBW, ok1 := parseBandwidthValue(args[1])
+	maxBW, ok2 := parseBandwidthValue(args[2])
+	if !ok1 || !ok2 {
+		return h.replyAutoDelete(c, "❌ 参数错误，示例：<code>/bw 50</code>、<code>/bw 20 1000</code>、<code>/bw 0</code>", tele.ModeHTML)
+	}
+
+	if minBW > maxBW {
+		minBW, maxBW = maxBW, minBW
+	}
+
+	if minBW <= 0 && maxBW <= 0 {
+		h.engine.SetBandwidth(chatID, 0, 0)
+		return h.replyAutoDelete(c, "🧹 已清除带宽限制")
+	}
+
+	h.engine.SetBandwidth(chatID, minBW, maxBW)
+	return h.replyAutoDelete(c, fmt.Sprintf("✅ 带宽范围已设置为 <b>%d ~ %d Mbps</b>", minBW, maxBW), tele.ModeHTML)
+}
