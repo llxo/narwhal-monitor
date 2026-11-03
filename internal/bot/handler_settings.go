@@ -130,8 +130,6 @@ func (h *Handler) HandleFilter(c tele.Context) error {
 func (h *Handler) sendFilterHelp(c tele.Context) error {
 	helpText := `🔍 <b>【Narwhal Monitor 高级过滤规则使用指南】</b>
 
-💡 <i>平台主要提供特色 NAT 小鸡（多在 1$ 内，内存 64MB 起步），已深度支持精细化规格过滤。</i>
-
 <b>1. 规则管理命令（点击复制）：</b>
 • <code>/filter list</code> - 查看当前生效规则
 • <code>/filter regex 优化|cn2</code> - 快速添加正向匹配
@@ -141,7 +139,7 @@ func (h *Handler) sendFilterHelp(c tele.Context) error {
 • <code>/filter clear</code> - 清空所有自定义规则
 
 <b>2. 快捷正则示例：</b>
-• <code>/filter regex 64m|128m</code> (蹲守 64M/128M 特价小鸡)
+• <code>/filter regex 64m|128m</code> (匹配 64M 或 128M 内存)
 • <code>/filter regex 优化|cn2|9929|cmi</code> (三网精品线路)
 • <code>/filter regex 双栈|v4|端口</code> (带 IPv4 端口映射节点)
 • <code>/filter exclude 实验|无v4|纯v6</code> (排除纯 IPv6 或实验节点)
@@ -253,7 +251,7 @@ func parseRAM(val string) int {
 	} else {
 		// 纯数字
 		if f, err := strconv.ParseFloat(val, 64); err == nil {
-			// 在小鸡平台（64MB起步），<= 16 通常意指 GB（如 1 代表 1G，0.5 代表 512M）；>= 32 视为 MB
+			// 在平台（64MB起步），<= 16 通常意指 GB（如 1 代表 1G，0.5 代表 512M）；>= 32 视为 MB
 			if f <= 16 {
 				return int(f * 1024)
 			}

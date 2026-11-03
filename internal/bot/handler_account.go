@@ -235,8 +235,7 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 	// ==========================================
 	if h.engine.IsAuthorized(chatID) || h.engine.IsAuthorized(senderID) {
 		return h.replyAutoDelete(c, "💎 <b>您当前已拥有【正式白名单会员】权限</b>\n\n"+
-			"• 您已解锁 39 地区自选、极低限价与线路高级正则过滤特权，推送通道享有最高抢占优先级！\n"+
-			"• 无需降级为游客体验模式。\n\n"+
+			"• 您已拥有正式白名单会员权限，无需重复开通。\n\n"+
 			"<i>💡 发送 /menu 打开您的专属定制面板，发送 /sub 可随时启闭推送。</i>", tele.ModeHTML)
 	}
 
@@ -272,12 +271,11 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 	}
 
 	return h.replyAutoDelete(c, fmt.Sprintf("👋 <b>【Narwhal Cloud 游客体验模式说明】</b>\n\n"+
-		"游客模式是为外部 VPS 玩家提供的免费轻量监控体验通道。\n\n"+
-		"• <b>通道特性:</b> 免费接收平台全部未过滤的最新补货与上新推送\n"+
+		"• <b>通道特性:</b> 接收平台全部未过滤的最新补货与上新推送\n"+
 		"• <b>当前状态:</b> %s\n\n"+
 		"🚀 <b>如何开通体验？</b>\n"+
-		"直接发送 <code>/register</code> 即可一键登记开通，秒级激活补货推送！\n\n"+
-		"<i>💡 注: 如需精准过滤特定地区（如香港、日本）或月付≤0.5$特价玩具机，可联系管理员开通正式白名单。</i>", statusTip), tele.ModeHTML)
+		"直接发送 /register 即可一键登记开通，激活补货推送。\n\n"+
+		"<i>💡 注: 如需定制地区、限价或带宽过滤，可联系管理员开通正式白名单。</i>", statusTip), tele.ModeHTML)
 }
 
 // HandleUser 管理员专属白名单用户管理指令

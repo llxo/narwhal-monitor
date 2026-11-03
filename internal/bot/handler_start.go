@@ -36,8 +36,7 @@ func (h *Handler) HandleStart(c tele.Context) error {
 	if h.isAdmin(c) {
 		go h.registerAdminCommands(c.Bot(), senderID)
 		text := "👑 <b>【Narwhal Cloud 超级管理员控制台】</b>\n\n" +
-			fmt.Sprintf("• <b>超级管理员 ID:</b> <code>%d</code> (您自身)\n", chatID) +
-			"• <b>服务架构:</b> 实时差分监控 + 毫秒级补货广播 + 防洪限流熔断\n\n" +
+			fmt.Sprintf("• <b>超级管理员 ID:</b> <code>%d</code> (您自身)\n\n", chatID) +
 			"<b>🛠️ 管理员特权指令速查:</b>\n" +
 			"• /admin - 打开管理员专属主控制面板\n" +
 			"• /check - 立即扫描平台实时在售库存与命中套餐\n" +
@@ -69,8 +68,7 @@ func (h *Handler) HandleStart(c tele.Context) error {
 			"• 发送 <code>/filter regex 优化</code> - 配置线路、IPv4、内存或关键词高级正则过滤规则\n" +
 			"• 发送 /sub - 一键快速切换通知推送 (开启/暂停)\n" +
 			"• 发送 <code>/mute 1h</code> - 开启临时免打扰 (支持 30m, 2h 等)\n" +
-			"• 发送 /help - 查看完整规则编写指南与实战语法示例\n\n" +
-			"<i>💡 您的监控规则专属独立隔离，有符合偏好的新补货将在此第一时间推送！</i>"
+			"• 发送 /help - 查看完整规则编写指南与实战语法示例"
 		return h.replyAutoDelete(c, text, tele.ModeHTML)
 	}
 
@@ -114,9 +112,8 @@ func (h *Handler) HandleStart(c tele.Context) error {
 		guestTip +
 		"💎 <b>正式白名单会员特权:</b>\n" +
 		"• 支持 39 个地区自选白名单过滤 (港/日/美/新/德/英等)\n" +
-		"• 支持月付价格上限精准过滤 (如 ≤0.5$ 极低成本小鸡)\n" +
-		"• 支持 CN2 / CMI / 9929 / NAT双栈 等高级正则过滤\n" +
-		"• 享最高优先级抢占推送通道\n\n" +
+		"• 支持月付价格上限过滤 (如 ≤0.5$)\n" +
+		"• 支持 CN2 / CMI / 9929 / NAT双栈 等高级正则过滤\n\n" +
 		"<i>💡 如需开通正式白名单，请将上方 Chat ID 发送给管理员。</i>"
 
 	return h.replyAutoDelete(c, text, tele.ModeHTML)
@@ -143,9 +140,9 @@ func (h *Handler) HandleHelp(c tele.Context) error {
 • <code>/filter clear</code> - 清空所有自定义规则
 
 <b>3. 实用语法示例：</b>
-• <code>/filter regex 64m|128m</code> (快捷监控 64M 或 128M 特价玩具机)
+• <code>/filter regex 64m|128m</code> (监控 64M 或 128M 规格)
 • <code>/filter regex 双栈|v4|端口</code> (监控带 IPv4 端口映射的 NAT 节点)
-• <code>/filter add ram<=128m price<=0.3</code> (淘 ≤128M 极低成本玩具机)
+• <code>/filter add ram<=128m price<=0.3</code> (内存 ≤128M 且月付 ≤$0.3)
 • <code>/filter add price<=1 region=HK,JP</code> (限定香港或日本且月付≤1$)`)
 
 	if h.isAdmin(c) {
