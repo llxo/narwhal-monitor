@@ -125,7 +125,7 @@ func formatPrice(price float64) string {
 func RenderSettingsText(cfg filter.ChatConfig) string {
 	status := "🟢 监控推送中"
 	if !cfg.Subscribed {
-		status = "🔴 监控已暂停 (/sub on 开启)"
+		status = "🔴 监控已暂停 (发送 /sub 开启)"
 	} else if !cfg.MutedUntil.IsZero() && time.Now().Before(cfg.MutedUntil) {
 		status = fmt.Sprintf("🟡 免打扰中 (至 %s 结束)", cfg.MutedUntil.Format("15:04:05"))
 	}
@@ -175,7 +175,7 @@ func RenderSettingsText(cfg filter.ChatConfig) string {
 	sb.WriteString(fmt.Sprintf("• <b>地区白名单:</b> <code>%s</code>\n", regDesc))
 	sb.WriteString(fmt.Sprintf("• <b>价格上限:</b> <code>%s</code>\n", priceDesc))
 	sb.WriteString(fmt.Sprintf("• <b>带宽门槛:</b> <code>%s</code>\n", bwDesc))
-	sb.WriteString(fmt.Sprintf("• <b>高级自定义规则:</b> %d 条生效中 (/filter list 查看)\n\n", len(cfg.Rules)))
+	sb.WriteString(fmt.Sprintf("• <b>高级自定义规则:</b> %d 条生效中 (发送 <code>/filter list</code> 查看)\n\n", len(cfg.Rules)))
 	sb.WriteString("<i>💡 提示: 按钮即点即生效；面板 1 分钟未操作自动清屏自毁，亦可随时点击【🗑️ 关闭面板】立即清理</i>")
 
 	return sb.String()

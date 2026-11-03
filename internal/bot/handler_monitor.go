@@ -156,7 +156,7 @@ func (h *Handler) HandleCheck(c tele.Context) error {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("\n💡 <i>输入 /menu 可调整过滤规则，或使用 /filter regex 过滤关键词</i>\n"))
+	sb.WriteString(fmt.Sprintf("\n💡 <i>发送 /menu 可调整过滤规则，或发送 <code>/filter regex 优化</code> 过滤关键词</i>\n"))
 	sb.WriteString(fmt.Sprintf("⏰ <i>快照时间: %s (内存瞬时检索)</i>", cacheTime.Format("15:04:05")))
 
 	return c.Send(sb.String(), tele.ModeHTML)
@@ -223,7 +223,7 @@ func (h *Handler) HandleStatus(c tele.Context) error {
 		}
 	}
 
-	sb.WriteString("\n<i>💡 输入 <code>/admin</code> 可打开管理控制面板</i>")
+	sb.WriteString("\n<i>💡 发送 /admin 可打开管理控制面板</i>")
 	return c.Send(sb.String(), tele.ModeHTML)
 }
 
@@ -236,7 +236,7 @@ func (h *Handler) HandleBroadcast(c tele.Context) error {
 	rawText := strings.TrimSpace(c.Text())
 	firstSpace := strings.IndexAny(rawText, " \t\n")
 	if firstSpace == -1 {
-		return c.Send("❌ 用法错误: <code>/broadcast &lt;广播内容&gt;</code>", tele.ModeHTML)
+		return c.Send("❌ 用法示例: <code>/broadcast 系统维护通知</code>", tele.ModeHTML)
 	}
 
 	msgContent := strings.TrimSpace(rawText[firstSpace:])
@@ -322,13 +322,13 @@ func (h *Handler) HandleAdmin(c tele.Context) error {
 		"• <b>游客模式:</b> %s (名额: %s | 当前游客: <b>%d</b> 个)\n"+
 		"• <b>超级管理员:</b> <code>%d</code> (您自身)\n\n"+
 		"<b>🛠️ 管理指令速查:</b>\n"+
-		"• <code>/user add &lt;ID&gt; [备注]</code> - 授权新用户为正式白名单\n"+
-		"• <code>/user upgrade &lt;ID&gt;</code> - 将游客一键转为正式白名单\n"+
-		"• <code>/user del &lt;ID&gt;</code> - 移除白名单或游客\n"+
+		"• <code>/user add 123456789 张三</code> - 授权新用户为正式白名单\n"+
+		"• <code>/user upgrade 123456789</code> - 将游客一键转为正式白名单\n"+
+		"• <code>/user del 123456789</code> - 移除白名单或游客\n"+
 		"• <code>/user guests</code> - 查看当前全部游客列表\n"+
-		"• <code>/guest limit &lt;数量&gt;</code> - 设置游客限制数 (0为不限)\n"+
-		"• <code>/status</code> - 查看系统监控与服务运行状态\n"+
-		"• <code>/broadcast &lt;内容&gt;</code> - 向全员群发系统维护广播\n\n"+
+		"• <code>/guest limit 20</code> - 设置游客限制数 (0为不限)\n"+
+		"• /status - 查看系统监控与服务运行状态\n"+
+		"• <code>/broadcast 系统维护通知</code> - 向全员群发系统维护广播\n\n"+
 		"<i>💡 您可以直接点击下方快捷按钮进行操作：</i>",
 		len(auths), len(subs), guestStatus, limitStr, guestCount, h.adminID)
 
@@ -392,9 +392,9 @@ func (h *Handler) HandleBtnToggleGuest(c tele.Context) error {
 			"<b>🛠️ 管理指令速查:</b>\n"+
 			"• <code>/guest on</code> - 开启游客体验注册通道\n"+
 			"• <code>/guest off</code> - 关闭游客体验注册通道\n"+
-			"• <code>/guest limit &lt;数量&gt;</code> - 设置限制名额 (亦可直接输入 <code>/guest &lt;数字&gt;</code>)\n"+
-			"• <code>/user upgrade &lt;ID&gt;</code> - 一键将游客转为正式白名单\n"+
-			"• <code>/user del &lt;ID&gt;</code> - 移除游客并停用推送\n\n"+
+			"• <code>/guest limit 20</code> - 设置限制名额 (0为不限)\n"+
+			"• <code>/user upgrade 123456789</code> - 一键将游客转为正式白名单\n"+
+			"• <code>/user del 123456789</code> - 移除游客并停用推送\n\n"+
 			"<i>💡 您可以直接点击下方快捷按钮进行操作：</i>",
 			guestStatus, limitStr, guestCount, remainingStr)
 
@@ -419,13 +419,13 @@ func (h *Handler) HandleBtnToggleGuest(c tele.Context) error {
 		"• <b>游客模式:</b> %s (名额: %s | 当前游客: <b>%d</b> 个)\n"+
 		"• <b>超级管理员:</b> <code>%d</code> (您自身)\n\n"+
 		"<b>🛠️ 管理指令速查:</b>\n"+
-		"• <code>/user add &lt;ID&gt; [备注]</code> - 授权新用户为正式白名单\n"+
-		"• <code>/user upgrade &lt;ID&gt;</code> - 将游客一键转为正式白名单\n"+
-		"• <code>/user del &lt;ID&gt;</code> - 移除白名单或游客\n"+
+		"• <code>/user add 123456789 张三</code> - 授权新用户为正式白名单\n"+
+		"• <code>/user upgrade 123456789</code> - 将游客一键转为正式白名单\n"+
+		"• <code>/user del 123456789</code> - 移除白名单或游客\n"+
 		"• <code>/user guests</code> - 查看当前全部游客列表\n"+
-		"• <code>/guest limit &lt;数量&gt;</code> - 设置游客限制数 (0为不限)\n"+
-		"• <code>/status</code> - 查看系统监控与服务运行状态\n"+
-		"• <code>/broadcast &lt;内容&gt;</code> - 向全员群发系统维护广播\n\n"+
+		"• <code>/guest limit 20</code> - 设置游客限制数 (0为不限)\n"+
+		"• /status - 查看系统监控与服务运行状态\n"+
+		"• <code>/broadcast 系统维护通知</code> - 向全员群发系统维护广播\n\n"+
 		"<i>💡 您可以直接点击下方快捷按钮进行操作：</i>",
 		len(auths), len(subs), guestStatus, limitAdminStr, guestCount, h.adminID)
 
@@ -450,7 +450,7 @@ func (h *Handler) HandleBtnAdminGuests(c tele.Context) error {
 	_ = c.Respond()
 	guests := h.engine.GetAllGuestChats()
 	if len(guests) == 0 {
-		return c.Send("👥 当前游客列表为空。\n（外部用户输入 <code>/register</code> 可加入游客）", tele.ModeHTML)
+		return c.Send("👥 当前游客列表为空。\n（外部用户发送 /register 可加入游客）", tele.ModeHTML)
 	}
 
 	var sb strings.Builder
