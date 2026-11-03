@@ -140,7 +140,7 @@ func (h *Handler) HandleGuest(c tele.Context) error {
 				}
 				num, err := strconv.Atoi(args[2])
 				if err != nil || num < 0 {
-					return c.Send("❌ 限制人数必须为 >= 0 的整数", tele.ModeHTML)
+					return c.Send("❌ 限制人数必须为 ≥ 0 的整数", tele.ModeHTML)
 				}
 				h.engine.SetMaxGuests(num)
 				limitStr := "不限制"

@@ -135,15 +135,15 @@ func (h *Handler) HandleHelp(c tele.Context) error {
 • <code>/filter list</code> - 查看当前已生效的规则列表
 • <code>/filter regex 优化|cn2|9929|cmi</code> - 快速添加正向正则（满足才推）
 • <code>/filter exclude 实验|无v4|纯v6</code> - 快速添加反向正则（满足则丢弃）
-• <code>/filter add price<=0.5 ram>=256m</code> - 添加复合过滤规则
+• <code>/filter add price&lt;=0.5 ram&gt;=256m</code> - 添加复合过滤规则
 • <code>/filter del r1001</code> - 删除指定规则
 • <code>/filter clear</code> - 清空所有自定义规则
 
 <b>3. 实用语法示例：</b>
 • <code>/filter regex 64m|128m</code> (监控 64M 或 128M 规格)
 • <code>/filter regex 双栈|v4|端口</code> (监控带 IPv4 端口映射的 NAT 节点)
-• <code>/filter add ram<=128m price<=0.3</code> (内存 ≤128M 且月付 ≤$0.3)
-• <code>/filter add price<=1 region=HK,JP</code> (限定香港或日本且月付≤1$)`)
+• <code>/filter add ram&lt;=128m price&lt;=0.3</code> (内存 ≤128M 且月付 ≤$0.3)
+• <code>/filter add price&lt;=1 region=HK,JP</code> (限定香港或日本且月付≤1$)`)
 
 	if h.isAdmin(c) {
 		sb.WriteString("\n\n<b>4. 👑 超级管理员特权指令</b>\n" +
